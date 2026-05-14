@@ -1,0 +1,169 @@
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+from pathlib import Path
+
+from .api_testing.agent import ApiTesterAgent
+from .iteration_stats import ZentaoBugSource, generate_report_html, load_iterations, summarize_iteration
+from .shared.config import load_settings
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="QAToolKit")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    run_parser = subparsers.add_parser("run", help="Run the API testing workflow")
+    run_parser.add_argument("--spec-url", help="OpenAPI/Swagger JSON URL")
+    run_parser.add_argument("--swagger-ui-url", help="Swagger UI page URL")
+    run_parser.add_argument("--mode", choices=["smoke", "full"], default="smoke")
+    run_parser.add_argument("--language", choices=["python", "typescript", "javascript"])
+    run_parser.add_argument("--framework", choices=["requests", "pytest", "playwright", "jest", "cypress", "supertest"])
+    run_parser.add_argument("--output-dir", help="Output directory for generated artifacts")
+    run_parser.add_argument("--api-tester-mcp-source", help="Path to api_tester_mcp source folder")
+    run_parser.add_argument("--base-url", help="Override base URL used for requests")
+    run_parser.add_argument("--auth-bearer", help="Bearer token")
+    run_parser.add_argument("--auth-apikey", help="API key")
+    run_parser.add_argument("--auth-basic", help="Base64 basic auth credentials")
+    run_parser.add_argument("--max-concurrent", type=int, default=10)
+    run_parser.add_argument("--no-negative", action="store_true", help="Skip negative scenarios")
+    run_parser.add_argument("--no-edge", action="store_true", help="Skip edge scenarios")
+
+    inspect_parser = subparsers.add_parser("inspect", help="Fetch and summarize a Swagger/OpenAPI spec")
+    inspect_parser.add_argument("--spec-url", required=True, help="OpenAPI/Swagger JSON URL")
+    inspect_parser.add_argument("--output-dir", help="Output directory for artifacts")
+
+    iteration_list_parser = subparsers.add_parser("iteration-list", help="List configured test iterations")
+    iteration_list_parser.add_argument("--iterations-file", help="Path to iterations.json")
+
+    iteration_stats_parser = subparsers.add_parser("iteration-stats", help="Show test statistics for an iteration")
+    iteration_stats_parser.add_argument("--iteration", required=True, help="Iteration name, for example V3.4")
+    iteration_stats_parser.add_argument("--end-date", help="Statistics end date, yyyy-mm-dd")
+    iteration_stats_parser.add_argument("--iterations-file", help="Path to iterations.json")
+    iteration_stats_parser.add_argument("--sample-bugs-file", help="Path to sample ZenTao bugs JSON")
+    iteration_stats_parser.add_argument("--zentao-base-url", help="ZenTao API base URL")
+    iteration_stats_parser.add_argument("--zentao-account", help="ZenTao login account")
+    iteration_stats_parser.add_argument("--zentao-password", help="ZenTao login password")
+    iteration_stats_parser.add_argument("--zentao-token", help="ZenTao API token")
+    iteration_stats_parser.add_argument("--zentao-product-id", type=int, help="ZenTao product ID")
+    iteration_stats_parser.add_argument("--zentao-timeout", type=int, help="ZenTao API timeout")
+    iteration_stats_parser.add_argument("--allow-sample-fallback", action="store_true", help="Allow local sample bugs as fallback")
+    iteration_stats_parser.add_argument("--zentao-user-map-file", help="Path to account-to-Chinese-name map JSON")
+
+    iteration_report_parser = subparsers.add_parser("iteration-report", help="Generate an HTML test statistics report")
+    iteration_report_parser.add_argument("--iteration", required=True, help="Iteration name, for example V3.4")
+    iteration_report_parser.add_argument("--end-date", help="Statistics end date, yyyy-mm-dd")
+    iteration_report_parser.add_argument("--iterations-file", help="Path to iterations.json")
+    iteration_report_parser.add_argument("--sample-bugs-file", help="Path to sample ZenTao bugs JSON")
+    iteration_report_parser.add_argument("--zentao-base-url", help="ZenTao API base URL")
+    iteration_report_parser.add_argument("--zentao-account", help="ZenTao login account")
+    iteration_report_parser.add_argument("--zentao-password", help="ZenTao login password")
+    iteration_report_parser.add_argument("--zentao-token", help="ZenTao API token")
+    iteration_report_parser.add_argument("--zentao-product-id", type=int, help="ZenTao product ID")
+    iteration_report_parser.add_argument("--zentao-timeout", type=int, help="ZenTao API timeout")
+    iteration_report_parser.add_argument("--allow-sample-fallback", action="store_true", help="Allow local sample bugs as fallback")
+    iteration_report_parser.add_argument("--zentao-user-map-file", help="Path to account-to-Chinese-name map JSON")
+    iteration_report_parser.add_argument("--output-path", help="Report output path")
+
+    return parser
+
+
+def main() -> None:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8")
+
+    parser = build_parser()
+    args = parser.parse_args()
+    settings = load_settings()
+
+    if getattr(args, "output_dir", None):
+        settings = settings.__class__(
+            **{**settings.__dict__, "output_dir": str(Path(args.output_dir).expanduser().resolve())}
+        )
+
+    if args.command == "inspect":
+        agent = ApiTesterAgent(settings)
+        result = agent._build_llm_plan(
+            spec_url=args.spec_url,
+            swagger_ui_url=None,
+            base_url_override=None,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "iteration-list":
+        result = [
+            {
+                "name": item.name,
+                "start_date": item.start_date.isoformat(),
+                "zentao_project_id": item.zentao_project_id,
+                "description": item.description,
+            }
+            for item in load_iterations(args.iterations_file or os.getenv("ITERATIONS_FILE")).values()
+        ]
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+
+    if args.command in {"iteration-stats", "iteration-report"}:
+        end_date = None
+        if args.end_date:
+            from datetime import date
+
+            end_date = date.fromisoformat(args.end_date)
+        bug_source = ZentaoBugSource(
+            base_url=args.zentao_base_url or os.getenv("ZENTAO_BASE_URL"),
+            account=args.zentao_account or os.getenv("ZENTAO_ACCOUNT") or os.getenv("ZENTAO_USER") or os.getenv("ZENTAO_USERNAME"),
+            password=args.zentao_password or os.getenv("ZENTAO_PASSWORD") or os.getenv("ZENTAO_PASS"),
+            token=args.zentao_token or os.getenv("ZENTAO_TOKEN"),
+            product_id=args.zentao_product_id or int(os.getenv("ZENTAO_PRODUCT_ID", "8")),
+            timeout=args.zentao_timeout or int(os.getenv("ZENTAO_TIMEOUT", "30")),
+            allow_sample_fallback=args.allow_sample_fallback
+            or os.getenv("ZENTAO_ALLOW_SAMPLE_FALLBACK", "0").strip().lower() in {"1", "true", "yes"},
+            user_name_map_file=args.zentao_user_map_file or os.getenv("ZENTAO_USER_MAP_FILE"),
+            sample_file=args.sample_bugs_file or os.getenv("ZENTAO_SAMPLE_BUGS_FILE"),
+        )
+        stats = summarize_iteration(
+            iteration_name=args.iteration,
+            end_date=end_date,
+            iterations_file=args.iterations_file or os.getenv("ITERATIONS_FILE"),
+            bug_source=bug_source,
+        )
+        if args.command == "iteration-stats":
+            print(json.dumps(stats, ensure_ascii=False, indent=2))
+            return
+
+        report_path = generate_report_html(stats, args.output_path)
+        print(json.dumps({"report_path": report_path, "stats": stats}, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "run":
+        if getattr(args, "api_tester_mcp_source", None):
+            settings = settings.__class__(
+                **{**settings.__dict__, "api_tester_mcp_source": args.api_tester_mcp_source}
+            )
+
+        agent = ApiTesterAgent(settings)
+        result = agent.run(
+            spec_url=args.spec_url,
+            swagger_ui_url=args.swagger_ui_url,
+            mode=args.mode,
+            language=args.language,
+            framework=args.framework,
+            include_negative_tests=not args.no_negative,
+            include_edge_cases=not args.no_edge,
+            max_concurrent=args.max_concurrent,
+            base_url_override=args.base_url,
+            auth_bearer=args.auth_bearer,
+            auth_apikey=args.auth_apikey,
+            auth_basic=args.auth_basic,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+
+
+if __name__ == "__main__":
+    main()

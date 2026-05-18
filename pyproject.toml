@@ -14,10 +14,15 @@ dependencies = [
     "pydantic>=2.0.0",
     "PyYAML>=6.0",
     "Jinja2>=3.1.0",
+    "openpyxl>=3.1.0",
+    "fastapi>=0.110.0",
+    "uvicorn>=0.27.0",
+    "python-multipart>=0.0.9",
 ]
 
 [project.scripts]
 qatoolkit = "qatoolkit.cli:main"
+qatoolkit-web = "qatoolkit.web.app:main"
 qatoolkit-zentao-stats-mcp = "qatoolkit.mcp_servers.zentao_stats:main"
 
 [project.optional-dependencies]
@@ -30,3 +35,6 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"qatoolkit.web" = ["static/*.html"]

@@ -1,0 +1,2 @@
+"""Web application for QAToolKit."""
+

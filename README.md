@@ -1,9 +1,10 @@
 # QAToolKit
 
-这是一个长期维护型 QA Agent 工具箱。当前包含两条独立能力线：
+这是一个长期维护型 QA Agent 工具箱。当前包含三条独立能力线：
 
 - 接口测试 Agent：把公司 Qwen 大模型和 `api_tester_mcp` 串起来做 Swagger/OpenAPI 接口测试。
 - 禅道统计 Agent：读取版本起测配置，统计禅道缺陷数据，并生成测试统计报告。
+- 测试用例导入 Agent：读取多 Sheet Excel 测试用例表，通过 ZenTao API 批量上传测试用例。
 
 ## 项目结构
 
@@ -21,6 +22,8 @@ QAToolKit/
 │       │   ├── mcp_bridge.py
 │       │   └── specs.py
 │       ├── iteration_stats/      # 迭代/禅道统计 Agent
+│       │   └── service.py
+│       ├── testcase_import/      # Excel 测试用例导入 Agent
 │       │   └── service.py
 │       ├── mcp_servers/          # MCP Server 入口
 │       │   └── zentao_stats.py
@@ -76,6 +79,54 @@ pip install -e .
 ```
 
 ## 运行
+
+### Web 平台
+
+现在已经有第一版 Web 入口，适合不想每次敲命令时使用：
+
+```bash
+python -m qatoolkit web
+```
+
+默认访问：
+
+```text
+http://127.0.0.1:8000/
+```
+
+也可以指定端口：
+
+```bash
+python -m qatoolkit web --host 127.0.0.1 --port 8010
+```
+
+Web 第一版包含：
+
+- 接口测试任务创建
+- Excel 测试用例导入 dry-run / 正式上传
+- 迭代统计查询 / HTML 报告生成
+- 任务列表、任务详情、执行日志、输出 JSON、报告链接
+- 历史任务持久化、双击查看详情、删除任务记录
+
+所有 Web 任务会统一记录到：
+
+```text
+artifacts/tasks/
+```
+
+其中包含任务数据库、上传文件、任务输入输出和执行日志。关闭 Web 进程后再次启动，历史任务仍可在页面里追溯。这个目录属于运行产物，不会提交到 Git。
+
+接口测试依赖 `api_tester_mcp`，可以在页面表单里填写路径，或在 `.env` 中配置：
+
+```text
+API_TESTER_MCP_SOURCE=E:\个人文件\MCP\api_tester_mcp-1.5.3
+```
+
+安装或更新依赖：
+
+```bash
+pip install -e .
+```
 
 先跑 Petstore：
 
@@ -212,7 +263,7 @@ ZENTAO_PRODUCT_ID=8
 
 报告里的“研发处理分布”和“每日趋势”都是可展开的，点对应研发名或日期后，会直接展开看到遗留 Bug 明细。
 
-示例 `V3.4` 起测日期为 `2026-05-16`。如果不指定 `--end-date`，默认查到今天会得到“起测日期晚于截止日期”的提示。演示时可以指定一个截止日期：
+示例 `V3.4` 起测日期为 `2026-05-10`。如果不指定 `--end-date`，默认会统计到今天。演示时可以指定一个截止日期：
 
 ```bash
 python -m qatoolkit iteration-stats --iteration V3.4 --end-date 2026-05-20
@@ -270,3 +321,65 @@ GET  {ZENTAO_BASE_URL}/products/8/bugs
 ```
 
 本地 `sample_zentao_bugs.json` 只保留给没有接 ZenTao 服务时的离线调试，不作为正式统计来源。
+
+## Excel 测试用例批量上传
+
+新增了一个 Excel 批量上传测试用例能力，用来把“当前版本汇总测试用例表”按 Sheet 逐个导入 ZenTao。
+
+当前规则：
+
+- 接口：`POST /testcases`
+- 产品 ID：默认固定 `8`
+- 鉴权：请求头 `token`
+- 支持多 Sheet 工作簿逐 Sheet 上传
+- 默认优先使用 Excel 里的“模块”列；如果没有，就回退用 Sheet 名匹配模块
+- 模块名会按固定映射绑定：
+  - `首页 -> 121`
+  - `AI员工 -> 122`
+  - `AI群组 -> 123`
+  - `工作流 -> 124`
+  - `公共支持服务 -> 125`
+  - `个人中心 -> 126`
+  - `赛点详情 -> 158`
+  - `资产库 -> 159`
+  - `需求池 -> 168`
+  - `登录 -> 172`
+
+支持的表头别名包括：
+
+- `用例标题 / 标题 / 用例名称`
+- `模块 / 所属模块`
+- `优先级`
+- `用例类型 / 类型`
+- `前置条件`
+- `步骤 / 测试步骤 / 操作步骤`
+- `预期 / 预期结果`
+- `相关需求`
+- `所属项目`
+- `所属执行`
+
+执行上传：
+
+```bash
+python -m qatoolkit import-testcases --excel-file C:\Users\Insight\PycharmProjects\QAToolKit\data\V3.4测试用例汇总1.xlsx
+```
+
+只校验 Excel 解析和模块映射，不真正上传：
+
+```bash
+python -m qatoolkit import-testcases --excel-file C:\path\to\testcases.xlsx --dry-run
+```
+
+只传指定 Sheet：
+
+```bash
+python -m qatoolkit import-testcases --excel-file C:\path\to\testcases.xlsx --sheet 首页 --sheet 工作流
+```
+
+每次执行都会输出一份带时间戳的结果 JSON，不覆盖历史记录，例如：
+
+```text
+artifacts/testcase_imports/testcases_zentao_import_20260514_110000.json
+```
+
+导入结果 JSON 会记录每条用例的请求体、脱敏后的请求头、请求地址和接口返回体，方便回溯实际上传情况。

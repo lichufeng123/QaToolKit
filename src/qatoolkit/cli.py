@@ -9,6 +9,7 @@ from pathlib import Path
 from .api_testing.agent import ApiTesterAgent
 from .iteration_stats import ZentaoBugSource, generate_report_html, load_iterations, summarize_iteration
 from .shared.config import load_settings
+from .testcase_import import import_testcases_from_excel
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -40,6 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     iteration_stats_parser = subparsers.add_parser("iteration-stats", help="Show test statistics for an iteration")
     iteration_stats_parser.add_argument("--iteration", required=True, help="Iteration name, for example V3.4")
+    iteration_stats_parser.add_argument("--start-date", help="Statistics start date, yyyy-mm-dd")
     iteration_stats_parser.add_argument("--end-date", help="Statistics end date, yyyy-mm-dd")
     iteration_stats_parser.add_argument("--iterations-file", help="Path to iterations.json")
     iteration_stats_parser.add_argument("--sample-bugs-file", help="Path to sample ZenTao bugs JSON")
@@ -54,6 +56,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     iteration_report_parser = subparsers.add_parser("iteration-report", help="Generate an HTML test statistics report")
     iteration_report_parser.add_argument("--iteration", required=True, help="Iteration name, for example V3.4")
+    iteration_report_parser.add_argument("--start-date", help="Statistics start date, yyyy-mm-dd")
     iteration_report_parser.add_argument("--end-date", help="Statistics end date, yyyy-mm-dd")
     iteration_report_parser.add_argument("--iterations-file", help="Path to iterations.json")
     iteration_report_parser.add_argument("--sample-bugs-file", help="Path to sample ZenTao bugs JSON")
@@ -66,6 +69,23 @@ def build_parser() -> argparse.ArgumentParser:
     iteration_report_parser.add_argument("--allow-sample-fallback", action="store_true", help="Allow local sample bugs as fallback")
     iteration_report_parser.add_argument("--zentao-user-map-file", help="Path to account-to-Chinese-name map JSON")
     iteration_report_parser.add_argument("--output-path", help="Report output path")
+
+    testcase_import_parser = subparsers.add_parser("import-testcases", help="Import Excel testcases into ZenTao")
+    testcase_import_parser.add_argument("--excel-file", required=True, help="Path to the Excel testcase workbook")
+    testcase_import_parser.add_argument("--sheet", action="append", dest="sheets", help="Only import the specified sheet name; can be repeated")
+    testcase_import_parser.add_argument("--dry-run", action="store_true", help="Parse and validate Excel without creating testcases in ZenTao")
+    testcase_import_parser.add_argument("--zentao-base-url", help="ZenTao API base URL")
+    testcase_import_parser.add_argument("--zentao-account", help="ZenTao login account")
+    testcase_import_parser.add_argument("--zentao-password", help="ZenTao login password")
+    testcase_import_parser.add_argument("--zentao-token", help="ZenTao API token")
+    testcase_import_parser.add_argument("--zentao-product-id", type=int, help="ZenTao product ID")
+    testcase_import_parser.add_argument("--zentao-timeout", type=int, help="ZenTao API timeout")
+    testcase_import_parser.add_argument("--output-path", help="Import result output path")
+
+    web_parser = subparsers.add_parser("web", help="Start the QAToolKit web application")
+    web_parser.add_argument("--host", default="127.0.0.1", help="Web server host")
+    web_parser.add_argument("--port", type=int, default=8000, help="Web server port")
+    web_parser.add_argument("--reload", action="store_true", help="Enable uvicorn reload")
 
     return parser
 
@@ -109,7 +129,12 @@ def main() -> None:
         return
 
     if args.command in {"iteration-stats", "iteration-report"}:
+        start_date = None
         end_date = None
+        if args.start_date:
+            from datetime import date
+
+            start_date = date.fromisoformat(args.start_date)
         if args.end_date:
             from datetime import date
 
@@ -128,6 +153,7 @@ def main() -> None:
         )
         stats = summarize_iteration(
             iteration_name=args.iteration,
+            start_date=start_date,
             end_date=end_date,
             iterations_file=args.iterations_file or os.getenv("ITERATIONS_FILE"),
             bug_source=bug_source,
@@ -138,6 +164,28 @@ def main() -> None:
 
         report_path = generate_report_html(stats, args.output_path)
         print(json.dumps({"report_path": report_path, "stats": stats}, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "import-testcases":
+        result = import_testcases_from_excel(
+            workbook_path=args.excel_file,
+            base_url=args.zentao_base_url or os.getenv("ZENTAO_BASE_URL") or "",
+            account=args.zentao_account or os.getenv("ZENTAO_ACCOUNT") or os.getenv("ZENTAO_USER") or os.getenv("ZENTAO_USERNAME"),
+            password=args.zentao_password or os.getenv("ZENTAO_PASSWORD") or os.getenv("ZENTAO_PASS"),
+            token=args.zentao_token or os.getenv("ZENTAO_TOKEN"),
+            product_id=args.zentao_product_id or int(os.getenv("ZENTAO_PRODUCT_ID", "8")),
+            timeout=args.zentao_timeout or int(os.getenv("ZENTAO_TIMEOUT", "30")),
+            dry_run=args.dry_run,
+            output_path=args.output_path,
+            sheet_names=args.sheets,
+        )
+        print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "web":
+        import uvicorn
+
+        uvicorn.run("qatoolkit.web.app:app", host=args.host, port=args.port, reload=args.reload)
         return
 
     if args.command == "run":

@@ -210,15 +210,29 @@ class ZentaoBugSource:
 def summarize_iteration(
     *,
     iteration_name: str,
+    start_date: date | None = None,
     end_date: date | None = None,
     iterations_file: str | Path | None = None,
     bug_source: ZentaoBugSource | None = None,
 ) -> dict[str, Any]:
     iterations = load_iterations(iterations_file)
     if iteration_name not in iterations:
-        raise ValueError(f"Unknown iteration: {iteration_name}")
+        if not start_date:
+            raise ValueError(f"Unknown iteration: {iteration_name}")
+        iteration = Iteration(name=iteration_name, start_date=start_date)
+    else:
+        configured_iteration = iterations[iteration_name]
+        iteration = (
+            Iteration(
+                name=configured_iteration.name,
+                start_date=start_date,
+                zentao_project_id=configured_iteration.zentao_project_id,
+                description=configured_iteration.description,
+            )
+            if start_date
+            else configured_iteration
+        )
 
-    iteration = iterations[iteration_name]
     today = date.today()
     actual_end_date = end_date or today
     warnings: list[str] = []
@@ -648,6 +662,11 @@ def _build_display_name_map(
         normalized = _normalize_name_key(raw_name)
         if normalized and normalized in roster_lookup:
             result.setdefault(raw_name, roster_lookup[normalized])
+            continue
+        for roster_key, display_name in roster_lookup.items():
+            if normalized and (normalized in roster_key or roster_key in normalized):
+                result.setdefault(raw_name, display_name)
+                break
     return result
 
 

@@ -8,6 +8,9 @@ from .environment import load_dotenv_file
 from .paths import project_root
 
 
+DEFAULT_API_TESTER_MCP_SOURCE = r"E:\个人文件\MCP\api_tester_mcp-1.5.3"
+
+
 @dataclass(frozen=True)
 class Settings:
     llm_base_url: str | None
@@ -63,7 +66,7 @@ def load_settings() -> Settings:
         api_tester_mcp_source=_first_env(
             "API_TESTER_MCP_SOURCE",
             "API_TESTER_MCP_PATH",
-        ),
+        ) or DEFAULT_API_TESTER_MCP_SOURCE,
         default_language=os.getenv("DEFAULT_LANGUAGE", "python"),
         default_framework=os.getenv("DEFAULT_FRAMEWORK", "requests"),
         zentao_base_url=_first_env("ZENTAO_BASE_URL"),

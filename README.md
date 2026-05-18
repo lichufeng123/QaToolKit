@@ -107,6 +107,9 @@ Web 第一版包含：
 - 迭代统计查询 / HTML 报告生成
 - 任务列表、任务详情、执行日志、输出 JSON、报告链接
 - 历史任务持久化、双击查看详情、删除任务记录
+- 任务搜索、状态筛选、类型筛选
+- 一键清理失败任务
+- 日志和输出折叠查看
 
 所有 Web 任务会统一记录到：
 
@@ -151,6 +154,20 @@ qatoolkit run --swagger-ui-url https://example.com/swagger/
 - `swagger.json`
 - `v2/swagger.json`
 - `openapi.json`
+
+## 测试
+
+当前核心测试使用 Python 标准库 `unittest`，不需要额外测试框架：
+
+```bash
+python -m unittest discover -s tests
+```
+
+测试重点覆盖：
+
+- 禅道迭代统计的日期过滤、关闭率、研发中文名映射
+- Excel 用例导入的 Sheet 模块映射、步骤/预期对齐、删除线跳过
+- Web 任务库的失败任务批量清理
 
 ## 产物
 
@@ -232,14 +249,14 @@ qatoolkit run --swagger-ui-url https://example.com/swagger/
 - 登录接口：`POST /users/login`
 - 产品 Bug 接口：`GET /products/8/bugs`
 - 固定产品 ID：`8`
-- 登录参数：`account=lichufeng`，`password=Tiexie520+`
+- 登录参数通过 `.env` 或系统环境变量配置，不要把真实账号密码写进 README。
 
 推荐配置环境变量：
 
 ```text
-ZENTAO_BASE_URL=http://api.idc.insight-aigc.com/api.php/v2
-ZENTAO_ACCOUNT=lichufeng
-ZENTAO_PASSWORD=Tiexie520+
+ZENTAO_BASE_URL=http://your-zentao-server/api.php/v2
+ZENTAO_ACCOUNT=your-zentao-account
+ZENTAO_PASSWORD=your-zentao-password
 ZENTAO_PRODUCT_ID=8
 ```
 
@@ -306,9 +323,9 @@ pip install -e ".[mcp]"
 先配置环境变量：
 
 ```text
-ZENTAO_BASE_URL=http://api.idc.insight-aigc.com/api.php/v2
-ZENTAO_ACCOUNT=lichufeng
-ZENTAO_PASSWORD=Tiexie520+
+ZENTAO_BASE_URL=http://your-zentao-server/api.php/v2
+ZENTAO_ACCOUNT=your-zentao-account
+ZENTAO_PASSWORD=your-zentao-password
 ZENTAO_PRODUCT_ID=8
 ITERATIONS_FILE=data\iterations.json
 ```

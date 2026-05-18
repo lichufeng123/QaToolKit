@@ -1,0 +1,804 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>QAToolKit</title>
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --border: #dbe3ef;
+      --text: #162033;
+      --muted: #60708a;
+      --blue: #2563eb;
+      --green: #138a51;
+      --red: #c2413b;
+      --amber: #a16207;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Microsoft YaHei", "Segoe UI", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    header {
+      background: #fff;
+      border-bottom: 1px solid var(--border);
+      padding: 18px 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 18px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    h1 { margin: 0; font-size: 22px; }
+    h2 { margin: 0 0 14px; font-size: 18px; }
+    h3 { margin: 0 0 10px; font-size: 15px; }
+    main {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 22px 28px 36px;
+      display: grid;
+      gap: 18px;
+      min-width: 0;
+    }
+    .muted { color: var(--muted); font-size: 13px; }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      box-shadow: 0 10px 28px rgba(25, 40, 70, .05);
+      min-width: 0;
+    }
+    .stack { display: grid; gap: 14px; }
+    .tools {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      align-items: start;
+      gap: 14px;
+    }
+    .workspace {
+      display: grid;
+      grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+      gap: 14px;
+      align-items: start;
+      min-width: 0;
+    }
+    .task-list {
+      display: grid;
+      gap: 10px;
+      max-height: 620px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+    .task-tools {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .task-tools .row {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+    .task-tools label { margin-bottom: 0; }
+    .task-count {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    label {
+      display: grid;
+      gap: 6px;
+      font-size: 13px;
+      color: #334155;
+      margin-bottom: 10px;
+    }
+    input, select, textarea {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 9px 10px;
+      font: inherit;
+      background: #fff;
+      color: var(--text);
+    }
+    textarea { min-height: 72px; resize: vertical; }
+    .row {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .checks {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin: 4px 0 12px;
+    }
+    .checks label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin: 0;
+    }
+    .checks input { width: auto; }
+    button {
+      border: 1px solid transparent;
+      border-radius: 6px;
+      padding: 9px 12px;
+      font: inherit;
+      cursor: pointer;
+      background: var(--blue);
+      color: #fff;
+    }
+    button.secondary {
+      background: #fff;
+      color: var(--text);
+      border-color: var(--border);
+    }
+    button.danger { background: var(--red); }
+    button:disabled { opacity: .62; cursor: not-allowed; }
+    .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .task {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      display: grid;
+      gap: 6px;
+      cursor: pointer;
+      background: #fff;
+    }
+    .task.selected { border-color: var(--blue); box-shadow: 0 0 0 2px rgba(37, 99, 235, .12); }
+    .task:hover { border-color: #9bb7ea; }
+    .task-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 14px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 68px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      background: #edf2f7;
+      color: #475569;
+    }
+    .badge.running, .badge.pending { background: #fff7ed; color: var(--amber); }
+    .badge.success { background: #ecfdf5; color: var(--green); }
+    .badge.failed { background: #fef2f2; color: var(--red); }
+    pre {
+      background: #0f172a;
+      color: #e5e7eb;
+      border-radius: 8px;
+      padding: 12px;
+      overflow: auto;
+      max-height: 460px;
+      font-size: 12px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+      min-width: 0;
+    }
+    .detail-section {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-top: 12px;
+      overflow: hidden;
+      background: #fff;
+    }
+    .detail-section summary {
+      cursor: pointer;
+      padding: 10px 12px;
+      font-weight: 700;
+      background: #f8fafc;
+      list-style: none;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+    }
+    .detail-section summary::-webkit-details-marker { display: none; }
+    .detail-section summary::after {
+      content: "展开";
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 400;
+    }
+    .detail-section[open] summary::after { content: "收起"; }
+    .detail-section pre {
+      border-radius: 0;
+      margin: 0;
+      max-height: 360px;
+    }
+    .detail-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .metric {
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+    }
+    .metric strong { display: block; font-size: 16px; margin-top: 4px; }
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background: rgba(15, 23, 42, .48);
+      z-index: 100;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      width: min(460px, 100%);
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      box-shadow: 0 24px 70px rgba(15, 23, 42, .28);
+      padding: 18px;
+    }
+    .modal-title {
+      margin: 0 0 8px;
+      font-size: 18px;
+      font-weight: 700;
+    }
+    .modal-body {
+      color: #334155;
+      line-height: 1.6;
+      margin-bottom: 16px;
+    }
+    .modal-task {
+      margin-top: 8px;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #f8fafc;
+      word-break: break-all;
+      font-size: 13px;
+    }
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+    .toast-wrap {
+      position: fixed;
+      right: 22px;
+      bottom: 22px;
+      z-index: 120;
+      display: grid;
+      gap: 8px;
+      width: min(380px, calc(100vw - 44px));
+    }
+    .toast {
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--blue);
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #fff;
+      box-shadow: 0 16px 38px rgba(15, 23, 42, .16);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .toast.error { border-left-color: var(--red); }
+    .toast.success { border-left-color: var(--green); }
+    a { color: var(--blue); text-decoration: none; }
+    @media (max-width: 1100px) {
+      main, .tools, .workspace, .detail-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>QAToolKit</h1>
+      <div class="muted">接口测试、用例导入、迭代统计统一入口</div>
+    </div>
+    <div class="actions">
+      <button class="secondary" onclick="refreshTasks()">刷新任务</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="tools">
+      <form class="panel" id="apiForm">
+        <h2>接口测试</h2>
+        <label>Swagger UI URL <input name="swagger_ui_url" placeholder="https://petstore.swagger.io/"></label>
+        <label>OpenAPI JSON URL <input name="spec_url" placeholder="可选，优先于 Swagger UI"></label>
+        <label>api_tester_mcp 路径 <input name="api_tester_mcp_source" id="apiTesterMcpSource" value="E:\个人文件\MCP\api_tester_mcp-1.5.3" placeholder="例如 E:\个人文件\MCP\api_tester_mcp-1.5.3"></label>
+        <div class="row">
+          <label>模式
+            <select name="mode">
+              <option value="smoke">smoke</option>
+              <option value="full">full</option>
+            </select>
+          </label>
+          <label>并发数 <input name="max_concurrent" type="number" min="1" max="100" value="10"></label>
+        </div>
+        <label>Base URL <input name="base_url" placeholder="可选"></label>
+        <div class="checks">
+          <label><input name="include_negative_tests" type="checkbox" checked>负向测试</label>
+          <label><input name="include_edge_cases" type="checkbox" checked>边界测试</label>
+        </div>
+        <button type="submit">创建接口测试任务</button>
+      </form>
+
+      <form class="panel" id="importForm">
+        <h2>Excel 用例导入</h2>
+        <label>Excel 文件 <input name="file" type="file" accept=".xlsx" required></label>
+        <label>Sheet 名称 <input name="sheets" placeholder="可选，多个用英文逗号分隔"></label>
+        <div class="actions">
+          <button type="button" onclick="submitImport(true)">先 dry-run</button>
+          <button type="button" class="danger" onclick="submitImport(false)">正式上传</button>
+        </div>
+        <p class="muted">正式上传会写入 ZenTao，建议先 dry-run 看解析和跳过情况。</p>
+      </form>
+
+      <form class="panel" id="iterationForm">
+        <h2>迭代统计</h2>
+        <label>统计方式
+          <select id="iterationMode" onchange="toggleIterationMode()">
+            <option value="iteration">迭代版本 + 截止日期</option>
+            <option value="custom">开始日期 + 截止日期</option>
+          </select>
+        </label>
+        <label>迭代名称 <input name="iteration" id="iterationName" value="V3.4" required></label>
+        <div class="row">
+          <label id="startDateField" style="display:none">开始日期 <input name="start_date" id="iterationStartDate" type="date"></label>
+          <label>截止日期 <input name="end_date" type="date"></label>
+        </div>
+        <div class="actions">
+          <button type="button" onclick="submitIteration(false)">查询统计</button>
+          <button type="button" onclick="submitIteration(true)">生成报告</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="workspace">
+      <aside class="panel">
+        <div class="actions" style="justify-content: space-between; margin-bottom: 12px;">
+          <h2 style="margin:0">最近任务</h2>
+          <button class="secondary" onclick="refreshTasks()">刷新</button>
+        </div>
+        <div class="muted" style="margin-bottom: 10px;">任务会保存在 artifacts/tasks/tasks.db，重启 Web 后仍可追溯。默认展示最近 200 条，单击选择，双击查看详情。</div>
+        <div class="task-tools">
+          <label>搜索任务 <input id="taskSearch" placeholder="按标题、类型、ID、状态搜索"></label>
+          <div class="row">
+            <label>状态
+              <select id="taskStatusFilter">
+                <option value="">全部状态</option>
+                <option value="pending">等待中</option>
+                <option value="running">执行中</option>
+                <option value="success">成功</option>
+                <option value="failed">失败</option>
+              </select>
+            </label>
+            <label>类型
+              <select id="taskTypeFilter">
+                <option value="">全部类型</option>
+                <option value="api_test">接口测试</option>
+                <option value="testcase_import_dry_run">用例导入预览</option>
+                <option value="testcase_import">用例正式导入</option>
+                <option value="iteration_stats">迭代统计</option>
+                <option value="iteration_report">迭代报告</option>
+              </select>
+            </label>
+          </div>
+          <div class="task-count">
+            <span class="muted" id="taskCount">暂无任务</span>
+            <button class="danger" id="clearFailedButton" type="button" onclick="openClearFailedModal()">清理失败任务</button>
+          </div>
+        </div>
+        <div id="taskList" class="task-list"></div>
+      </aside>
+
+      <section class="panel" id="detailPanel">
+        <h2>任务详情</h2>
+        <div id="detailEmpty" class="muted">选择左侧任务后查看详情。</div>
+        <div id="taskDetail" style="display:none">
+          <div class="detail-grid">
+            <div class="metric">状态<strong id="detailStatus"></strong></div>
+            <div class="metric">类型<strong id="detailType"></strong></div>
+            <div class="metric">创建时间<strong id="detailTime"></strong></div>
+          </div>
+          <div class="actions" id="detailActions" style="margin-bottom: 12px;"></div>
+          <div id="reportLink"></div>
+          <details class="detail-section" id="logSection" open>
+            <summary>日志</summary>
+            <pre id="detailLogs"></pre>
+          </details>
+          <details class="detail-section" id="outputSection">
+            <summary>输出</summary>
+            <pre id="detailOutput"></pre>
+          </details>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <div class="modal-overlay" id="deleteModal" role="dialog" aria-modal="true" aria-labelledby="deleteModalTitle">
+    <div class="modal">
+      <div class="modal-title" id="deleteModalTitle">删除任务记录</div>
+      <div class="modal-body">
+        <div id="deleteModalMessage">删除后这条任务记录和对应任务产物都会移除，报告文件也会一起清理。</div>
+        <div class="modal-task" id="deleteTaskInfo"></div>
+      </div>
+      <div class="modal-actions">
+        <button class="secondary" type="button" onclick="closeDeleteModal()">取消</button>
+        <button class="danger" type="button" id="confirmDeleteButton" onclick="confirmDeleteTask()">确认删除</button>
+      </div>
+    </div>
+  </div>
+  <div class="toast-wrap" id="toastWrap" aria-live="polite"></div>
+
+  <script>
+    let selectedTaskId = null;
+    let pollTimer = null;
+    let currentTask = null;
+    let allTasks = [];
+    let pendingModalAction = null;
+    let pendingDeleteTask = null;
+
+    async function api(path, options = {}) {
+      const response = await fetch(path, options);
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || response.statusText);
+      }
+      return response.json();
+    }
+
+    function formJson(form) {
+      const data = new FormData(form);
+      return Object.fromEntries([...data.entries()].filter(([, value]) => value !== ""));
+    }
+
+    document.getElementById("apiForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const payload = formJson(form);
+      payload.max_concurrent = Number(payload.max_concurrent || 10);
+      payload.include_negative_tests = form.elements.include_negative_tests.checked;
+      payload.include_edge_cases = form.elements.include_edge_cases.checked;
+      try {
+        const result = await api("/api/api-testing/run", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(payload),
+        });
+        await refreshTasks();
+        await showTask(result.task_id);
+      } catch (error) {
+        showToast(error.message, "error");
+      }
+    });
+
+    async function submitImport(dryRun) {
+      const form = document.getElementById("importForm");
+      const data = new FormData(form);
+      if (!data.get("file") || !data.get("file").name) {
+        showToast("先选择 Excel 文件。", "error");
+        return;
+      }
+      try {
+        const result = await api(dryRun ? "/api/testcase-import/dry-run" : "/api/testcase-import/run", {
+          method: "POST",
+          body: data,
+        });
+        await refreshTasks();
+        await showTask(result.task_id);
+      } catch (error) {
+        showToast(error.message, "error");
+      }
+    }
+
+    async function submitIteration(report) {
+      const form = document.getElementById("iterationForm");
+      const payload = formJson(form);
+      if (document.getElementById("iterationMode").value !== "custom") {
+        delete payload.start_date;
+      }
+      try {
+        const result = await api(report ? "/api/iteration-stats/report" : "/api/iteration-stats/query", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(payload),
+        });
+        await refreshTasks();
+        await showTask(result.task_id);
+      } catch (error) {
+        showToast(error.message, "error");
+      }
+    }
+
+    async function refreshTasks() {
+      allTasks = await api("/api/tasks?limit=200");
+      renderTasks();
+    }
+
+    function renderTasks() {
+      const tasks = filteredTasks();
+      const list = document.getElementById("taskList");
+      const failedCount = allTasks.filter((task) => task.status === "failed").length;
+      document.getElementById("clearFailedButton").disabled = failedCount === 0;
+      document.getElementById("taskCount").textContent = `${tasks.length} / ${allTasks.length} 条任务，失败 ${failedCount} 条`;
+      list.innerHTML = "";
+      if (!allTasks.length) {
+        list.innerHTML = "<div class='muted'>暂无任务。创建一次接口测试、用例导入或迭代统计后会出现在这里。</div>";
+        return;
+      }
+      if (!tasks.length) {
+        list.innerHTML = "<div class='muted'>没有符合筛选条件的任务。把搜索条件放宽点，别跟自己较劲。</div>";
+        return;
+      }
+      for (const task of tasks) {
+        const item = document.createElement("div");
+        item.className = task.id === selectedTaskId ? "task selected" : "task";
+        item.onclick = () => showTask(task.id);
+        item.ondblclick = () => showTask(task.id, true);
+        item.innerHTML = `
+          <div class="task-title"><span>${escapeHtml(task.title)}</span><span class="badge ${task.status}">${statusLabel(task.status)}</span></div>
+          <div class="muted">${task.type} · ${task.created_at}</div>
+          <div class="muted">${task.id}</div>
+        `;
+        list.appendChild(item);
+      }
+    }
+
+    function filteredTasks() {
+      const keyword = document.getElementById("taskSearch").value.trim().toLowerCase();
+      const status = document.getElementById("taskStatusFilter").value;
+      const type = document.getElementById("taskTypeFilter").value;
+      return allTasks.filter((task) => {
+        const haystack = [
+          task.title,
+          task.type,
+          task.status,
+          statusLabel(task.status),
+          task.id,
+          task.created_at,
+          task.error || "",
+        ].join(" ").toLowerCase();
+        return (!keyword || haystack.includes(keyword))
+          && (!status || task.status === status)
+          && (!type || task.type === type);
+      });
+    }
+
+    async function showTask(taskId, scrollToDetail = false) {
+      selectedTaskId = taskId;
+      const task = await api(`/api/tasks/${taskId}`);
+      currentTask = task;
+      await refreshTaskSelection();
+      document.getElementById("detailEmpty").style.display = "none";
+      document.getElementById("taskDetail").style.display = "block";
+      document.getElementById("detailStatus").textContent = statusLabel(task.status);
+      document.getElementById("detailType").textContent = task.type;
+      document.getElementById("detailTime").textContent = task.created_at;
+      document.getElementById("detailLogs").textContent = task.logs || "暂无日志";
+      document.getElementById("detailOutput").textContent = detailOutputText(task);
+      const report = task.report_path ? `<a target="_blank" href="/api/files?path=${encodeURIComponent(task.report_path)}">打开报告/结果文件</a>` : "<span class='muted'>暂无报告文件</span>";
+      document.getElementById("reportLink").innerHTML = report;
+      document.getElementById("detailActions").innerHTML = `
+        <button class="secondary" onclick="showTask('${task.id}', true)">刷新详情</button>
+        <button class="danger" onclick="openDeleteModal('${task.id}')">删除任务记录</button>
+      `;
+      if (scrollToDetail) {
+        document.getElementById("detailPanel").scrollIntoView({behavior: "smooth", block: "start"});
+      }
+      if (["pending", "running"].includes(task.status)) {
+        startPolling();
+      } else {
+        stopPolling();
+      }
+    }
+
+    async function refreshTaskSelection() {
+      for (const item of document.querySelectorAll(".task")) {
+        item.classList.remove("selected");
+      }
+      const tasks = [...document.querySelectorAll(".task")];
+      for (const item of tasks) {
+        if (item.textContent.includes(selectedTaskId)) {
+          item.classList.add("selected");
+        }
+      }
+    }
+
+    async function openDeleteModal(taskId) {
+      pendingModalAction = "delete-one";
+      pendingDeleteTask = currentTask && currentTask.id === taskId ? currentTask : await api(`/api/tasks/${taskId}`);
+      const status = statusLabel(pendingDeleteTask.status);
+      const runningHint = ["pending", "running"].includes(pendingDeleteTask.status)
+        ? "<br><span class='muted'>这个任务还没结束，删除记录不会中断后台执行。</span>"
+        : "";
+      document.getElementById("deleteModalTitle").textContent = "删除任务记录";
+      document.getElementById("deleteModalMessage").textContent = "删除后这条任务记录和对应任务产物都会移除，报告文件也会一起清理。";
+      document.getElementById("deleteTaskInfo").innerHTML = `
+        <strong>${escapeHtml(pendingDeleteTask.title)}</strong><br>
+        <span class="muted">${escapeHtml(pendingDeleteTask.type)} · ${status} · ${escapeHtml(pendingDeleteTask.id)}</span>${runningHint}
+      `;
+      document.getElementById("confirmDeleteButton").textContent = "确认删除";
+      document.getElementById("deleteModal").classList.add("open");
+    }
+
+    function openClearFailedModal() {
+      const failedTasks = allTasks.filter((task) => task.status === "failed");
+      if (!failedTasks.length) {
+        showToast("当前没有失败任务可清理。", "info");
+        return;
+      }
+      pendingModalAction = "delete-failed";
+      pendingDeleteTask = null;
+      document.getElementById("deleteModalTitle").textContent = "清理失败任务";
+      document.getElementById("deleteModalMessage").textContent = "将删除全部失败任务记录，并清理这些任务对应的产物目录。成功、运行中和等待中的任务不会受影响。";
+      document.getElementById("deleteTaskInfo").innerHTML = `
+        <strong>${failedTasks.length} 条失败任务</strong><br>
+        <span class="muted">包括当前筛选之外的失败任务。清完会轻快不少，省得列表里一地狼藉。</span>
+      `;
+      document.getElementById("confirmDeleteButton").textContent = "确认清理";
+      document.getElementById("deleteModal").classList.add("open");
+    }
+
+    function closeDeleteModal() {
+      pendingModalAction = null;
+      pendingDeleteTask = null;
+      document.getElementById("deleteModal").classList.remove("open");
+    }
+
+    async function confirmDeleteTask() {
+      if (!pendingModalAction) return;
+      const button = document.getElementById("confirmDeleteButton");
+      button.disabled = true;
+      button.textContent = pendingModalAction === "delete-failed" ? "清理中..." : "删除中...";
+      try {
+        if (pendingModalAction === "delete-failed") {
+          const result = await api("/api/tasks/failed?delete_artifacts=true", {method: "DELETE"});
+          if (currentTask && result.task_ids.includes(currentTask.id)) {
+            clearSelectedTask();
+          }
+          closeDeleteModal();
+          await refreshTasks();
+          showToast(`已清理 ${result.count} 条失败任务。`, "success");
+          return;
+        }
+        if (!pendingDeleteTask) return;
+        const taskId = pendingDeleteTask.id;
+        await api(`/api/tasks/${taskId}?delete_artifacts=true`, {method: "DELETE"});
+        if (selectedTaskId === taskId) clearSelectedTask();
+        closeDeleteModal();
+        await refreshTasks();
+        showToast("任务记录已删除。", "success");
+      } catch (error) {
+        showToast(error.message, "error");
+      } finally {
+        button.disabled = false;
+        button.textContent = "确认删除";
+      }
+    }
+
+    function clearSelectedTask() {
+      selectedTaskId = null;
+      currentTask = null;
+      document.getElementById("taskDetail").style.display = "none";
+      document.getElementById("detailEmpty").style.display = "block";
+    }
+
+    function startPolling() {
+      if (pollTimer) clearInterval(pollTimer);
+      pollTimer = setInterval(async () => {
+        if (!selectedTaskId) return;
+        await refreshTasks();
+        if (selectedTaskId) await showTask(selectedTaskId);
+      }, 2500);
+    }
+
+    function stopPolling() {
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+    }
+
+    function statusLabel(status) {
+      return {
+        pending: "等待中",
+        running: "执行中",
+        success: "成功",
+        failed: "失败",
+      }[status] || status;
+    }
+
+    function showToast(message, type = "info") {
+      const wrap = document.getElementById("toastWrap");
+      const toast = document.createElement("div");
+      toast.className = `toast ${type}`;
+      toast.textContent = message;
+      wrap.appendChild(toast);
+      setTimeout(() => toast.remove(), 4200);
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#039;",
+      }[char]));
+    }
+
+    async function loadConfig() {
+      try {
+        const config = await api("/api/config");
+        const input = document.getElementById("apiTesterMcpSource");
+        const configuredPath = String(config.api_tester_mcp_source || "E:\\个人文件\\MCP\\api_tester_mcp-1.5.3").replaceAll("\\\\", "\\");
+        if (configuredPath) {
+          input.value = configuredPath;
+        }
+      } catch (error) {
+        console.warn(error);
+      }
+    }
+
+    function toggleIterationMode() {
+      const mode = document.getElementById("iterationMode").value;
+      const startField = document.getElementById("startDateField");
+      const startInput = document.getElementById("iterationStartDate");
+      const iterationName = document.getElementById("iterationName");
+      const custom = mode === "custom";
+      startField.style.display = custom ? "grid" : "none";
+      startInput.required = custom;
+      iterationName.placeholder = custom ? "例如 自定义统计" : "例如 V3.4";
+      if (custom && iterationName.value === "V3.4") {
+        iterationName.value = "自定义统计";
+      }
+      if (!custom && iterationName.value === "自定义统计") {
+        iterationName.value = "V3.4";
+      }
+    }
+
+    function detailOutputText(task) {
+      if (task.output) {
+        return JSON.stringify(task.output, null, 2);
+      }
+      if (task.error) {
+        return JSON.stringify({error: task.error}, null, 2);
+      }
+      if (["pending", "running"].includes(task.status)) {
+        return "任务执行中，暂无输出。";
+      }
+      return "暂无输出。";
+    }
+
+    loadConfig().catch(console.error);
+    toggleIterationMode();
+    refreshTasks().catch(console.error);
+
+    document.getElementById("taskSearch").addEventListener("input", renderTasks);
+    document.getElementById("taskStatusFilter").addEventListener("change", renderTasks);
+    document.getElementById("taskTypeFilter").addEventListener("change", renderTasks);
+    document.getElementById("deleteModal").addEventListener("click", (event) => {
+      if (event.target.id === "deleteModal") closeDeleteModal();
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") closeDeleteModal();
+    });
+  </script>
+</body>
+</html>

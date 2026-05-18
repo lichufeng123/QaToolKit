@@ -60,3 +60,26 @@ class IterationStatsRequest(BaseModel):
 class TaskCreatedResponse(BaseModel):
     task_id: str
     task: TaskView
+
+
+class SettingsUpdateRequest(BaseModel):
+    llm_base_url: str | None = None
+    llm_api_key: str | None = None
+    llm_model: str | None = None
+    llm_timeout: int | None = Field(default=None, ge=1, le=600)
+    swagger_ui_url: str | None = None
+    spec_url: str | None = None
+    output_dir: str | None = None
+    smoke_max_endpoints: int | None = Field(default=None, ge=1, le=500)
+    default_api_mode: Literal["smoke", "full"] | None = None
+    api_tester_mcp_source: str | None = None
+    default_language: str | None = None
+    default_framework: str | None = None
+    zentao_base_url: str | None = None
+    zentao_account: str | None = None
+    zentao_password: str | None = None
+    zentao_token: str | None = None
+    zentao_product_id: int | None = Field(default=None, ge=1)
+    zentao_timeout: int | None = Field(default=None, ge=1, le=600)
+    zentao_allow_sample_fallback: bool | None = None
+    clear_fields: list[str] = Field(default_factory=list)

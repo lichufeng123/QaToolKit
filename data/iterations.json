@@ -1,6 +1,12 @@
 {
   "iterations": [
     {
+      "name": "历史版本",
+      "start_date": "2025-12-01",
+      "zentao_project_id": "历史版本",
+      "description": "历史版本 测试迭代"
+    },
+    {
       "name": "V3.4",
       "start_date": "2026-05-10",
       "zentao_project_id": "V3.4",

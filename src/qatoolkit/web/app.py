@@ -6,10 +6,12 @@ from typing import Annotated
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
+import requests
 
-from ..shared.config import load_settings
+from ..iteration_stats import load_iterations
+from ..shared.config import load_settings, local_settings_path, save_local_settings
 from ..shared.paths import project_root
-from .models import ApiTestingRunRequest, IterationStatsRequest, TaskCreatedResponse, TaskView
+from .models import ApiTestingRunRequest, IterationStatsRequest, SettingsUpdateRequest, TaskCreatedResponse, TaskView
 from .services import (
     run_api_testing_task,
     run_iteration_stats_task,
@@ -57,6 +59,143 @@ def config() -> dict[str, object]:
         "zentao_product_id": settings.zentao_product_id,
         "zentao_base_url": settings.zentao_base_url or "",
         "llm_model": settings.llm_model or "",
+    }
+
+
+@app.get("/api/settings")
+def get_settings() -> dict[str, object]:
+    settings = load_settings()
+    return {
+        "config_path": str(local_settings_path()),
+        "llm_base_url": settings.llm_base_url or "",
+        "llm_model": settings.llm_model or "",
+        "llm_timeout": settings.llm_timeout,
+        "has_llm_api_key": bool(settings.llm_api_key),
+        "llm_api_key_masked": _mask_secret(settings.llm_api_key),
+        "swagger_ui_url": settings.swagger_ui_url or "",
+        "spec_url": settings.spec_url or "",
+        "output_dir": settings.output_dir,
+        "smoke_max_endpoints": settings.smoke_max_endpoints,
+        "default_api_mode": settings.default_api_mode,
+        "api_tester_mcp_source": settings.api_tester_mcp_source or "",
+        "default_language": settings.default_language,
+        "default_framework": settings.default_framework,
+        "zentao_base_url": settings.zentao_base_url or "",
+        "zentao_account": settings.zentao_account or "",
+        "has_zentao_password": bool(settings.zentao_password),
+        "zentao_password_masked": _mask_secret(settings.zentao_password),
+        "has_zentao_token": bool(settings.zentao_token),
+        "zentao_token_masked": _mask_secret(settings.zentao_token),
+        "zentao_product_id": settings.zentao_product_id,
+        "zentao_timeout": settings.zentao_timeout,
+        "zentao_allow_sample_fallback": settings.zentao_allow_sample_fallback,
+    }
+
+
+@app.put("/api/settings")
+def update_settings(request: SettingsUpdateRequest) -> dict[str, object]:
+    updates = request.model_dump(exclude={"clear_fields"}, exclude_none=True)
+    for secret_key in ("llm_api_key", "zentao_password", "zentao_token"):
+        if updates.get(secret_key) == "":
+            updates.pop(secret_key)
+    save_local_settings(updates, clear_fields=request.clear_fields)
+    return {"saved": True, "settings": get_settings()}
+
+
+@app.post("/api/settings/verify/api-tester-mcp")
+def verify_api_tester_mcp() -> dict[str, object]:
+    settings = load_settings()
+    if not settings.api_tester_mcp_source:
+        raise HTTPException(status_code=400, detail="未配置 api_tester_mcp 路径")
+    source_path = Path(settings.api_tester_mcp_source).expanduser()
+    if not source_path.exists():
+        raise HTTPException(status_code=400, detail=f"路径不存在：{source_path}")
+    if not source_path.is_dir():
+        raise HTTPException(status_code=400, detail=f"路径不是目录：{source_path}")
+    return {"ok": True, "path": str(source_path)}
+
+
+@app.post("/api/settings/verify/zentao")
+def verify_zentao() -> dict[str, object]:
+    settings = load_settings()
+    if not settings.zentao_base_url:
+        raise HTTPException(status_code=400, detail="未配置 ZenTao BASE_URL")
+    if not (settings.zentao_token or (settings.zentao_account and settings.zentao_password)):
+        raise HTTPException(status_code=400, detail="未配置 ZenTao token 或账号密码")
+    base_url = settings.zentao_base_url.rstrip("/")
+    token = settings.zentao_token
+    session = requests.Session()
+    session.headers.update({"Accept": "application/json"})
+    if not token:
+        try:
+            response = session.post(
+                f"{base_url}/users/login",
+                json={"account": settings.zentao_account, "password": settings.zentao_password},
+                timeout=settings.zentao_timeout,
+            )
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            raise HTTPException(status_code=400, detail=f"ZenTao 登录请求失败：{exc}") from exc
+        payload = response.json()
+        if str(payload.get("status", "")).lower() != "success" or not payload.get("token"):
+            raise HTTPException(status_code=400, detail=f"ZenTao 登录失败：{payload}")
+        token = str(payload["token"])
+    try:
+        response = session.get(
+            f"{base_url}/products/{settings.zentao_product_id}/bugs",
+            params={"browseType": "all", "recPerPage": 1, "pageID": 1},
+            headers={"token": token},
+            timeout=settings.zentao_timeout,
+        )
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=400, detail=f"ZenTao Bug 列表请求失败：{exc}") from exc
+    payload = response.json()
+    if str(payload.get("status", "")).lower() != "success":
+        raise HTTPException(status_code=400, detail=f"ZenTao Bug 列表校验失败：{payload}")
+    return {"ok": True, "product_id": settings.zentao_product_id, "base_url": base_url}
+
+
+@app.post("/api/settings/verify/qwen")
+def verify_qwen() -> dict[str, object]:
+    settings = load_settings()
+    if not settings.llm_base_url or not settings.llm_model:
+        raise HTTPException(status_code=400, detail="未配置 Qwen BASE_URL 或 MODEL")
+    url = f"{settings.llm_base_url.rstrip('/')}/chat/completions"
+    headers = {"Content-Type": "application/json"}
+    if settings.llm_api_key:
+        headers["Authorization"] = f"Bearer {settings.llm_api_key}"
+    try:
+        response = requests.post(
+            url,
+            headers=headers,
+            json={
+                "model": settings.llm_model,
+                "messages": [{"role": "user", "content": "只回复 ok"}],
+                "temperature": 0,
+                "max_tokens": 8,
+            },
+            timeout=settings.llm_timeout,
+        )
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=400, detail=f"Qwen 校验请求失败：{exc}") from exc
+    return {"ok": True, "model": settings.llm_model, "base_url": settings.llm_base_url}
+
+
+@app.get("/api/iterations")
+def list_iterations() -> dict[str, object]:
+    iterations = load_iterations()
+    return {
+        "iterations": [
+            {
+                "name": item.name,
+                "start_date": item.start_date.isoformat(),
+                "zentao_project_id": item.zentao_project_id,
+                "description": item.description,
+            }
+            for item in iterations.values()
+        ]
     }
 
 
@@ -197,6 +336,14 @@ def _parse_sheet_names(value: str | None) -> list[str] | None:
         pass
     names = [item.strip() for item in value.split(",") if item.strip()]
     return names or None
+
+
+def _mask_secret(value: str | None) -> str:
+    if not value:
+        return ""
+    if len(value) <= 8:
+        return "*" * len(value)
+    return f"{value[:4]}{'*' * (len(value) - 8)}{value[-4:]}"
 
 
 def main() -> None:

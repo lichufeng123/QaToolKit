@@ -297,9 +297,57 @@
     }
     .toast.error { border-left-color: var(--red); }
     .toast.success { border-left-color: var(--green); }
+    .settings-panel {
+      grid-column: 1 / -1;
+    }
+    .settings-panel summary {
+      cursor: pointer;
+      list-style: none;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+    }
+    .settings-panel summary::-webkit-details-marker { display: none; }
+    .settings-panel summary::after {
+      content: "展开";
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 400;
+    }
+    .settings-panel[open] summary::after { content: "收起"; }
+    .settings-panel h2 { margin: 0; }
+    .settings-content { margin-top: 14px; }
+    .settings-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 10px;
+      align-items: start;
+    }
+    .settings-grid .wide-field {
+      grid-column: span 2;
+    }
+    .secret-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: end;
+    }
+    .secret-row label { margin-bottom: 0; }
+    .secret-row .checks { margin: 0 0 10px; }
+    .settings-actions {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
     a { color: var(--blue); text-decoration: none; }
+    @media (max-width: 1250px) {
+      .settings-grid .wide-field { grid-column: 1 / -1; }
+    }
     @media (max-width: 1100px) {
-      main, .tools, .workspace, .detail-grid { grid-template-columns: 1fr; }
+      main, .tools, .workspace, .detail-grid, .settings-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -316,19 +364,74 @@
 
   <main>
     <section class="tools">
-      <form class="panel" id="apiForm">
-        <h2>接口测试</h2>
-        <label>Swagger UI URL <input name="swagger_ui_url" placeholder="https://petstore.swagger.io/"></label>
-        <label>OpenAPI JSON URL <input name="spec_url" placeholder="可选，优先于 Swagger UI"></label>
-        <label>api_tester_mcp 路径 <input name="api_tester_mcp_source" id="apiTesterMcpSource" value="E:\个人文件\MCP\api_tester_mcp-1.5.3" placeholder="例如 E:\个人文件\MCP\api_tester_mcp-1.5.3"></label>
-        <div class="row">
-          <label>模式
-            <select name="mode">
+      <details class="panel settings-panel" id="settingsPanel">
+        <summary><h2>系统配置</h2></summary>
+        <form class="settings-content" id="settingsForm">
+          <div class="settings-grid">
+          <label>Qwen Base URL <input name="llm_base_url" id="llmBaseUrl" placeholder="http://your-qwen-server/v1"></label>
+          <label>Qwen Model <input name="llm_model" id="llmModel" placeholder="qwen-plus"></label>
+          <label>Qwen Timeout <input name="llm_timeout" id="llmTimeout" type="number" min="1" max="600"></label>
+          <div class="secret-row">
+            <label>Qwen API Key <input name="llm_api_key" id="llmApiKey" type="password" placeholder="留空则保留已有密钥"></label>
+            <div class="checks"><label><input id="clearLlmApiKey" type="checkbox">清空</label></div>
+          </div>
+          <label class="wide-field">api_tester_mcp 路径 <input name="api_tester_mcp_source" id="settingsApiTesterMcpSource" placeholder="E:\个人文件\MCP\api_tester_mcp-1.5.3"></label>
+          <label>默认接口模式
+            <select name="default_api_mode" id="defaultApiMode">
               <option value="smoke">smoke</option>
               <option value="full">full</option>
             </select>
           </label>
-          <label>并发数 <input name="max_concurrent" type="number" min="1" max="100" value="10"></label>
+          <label>默认并发数 <input name="smoke_max_endpoints" id="smokeMaxEndpoints" type="number" min="1" max="500"></label>
+          <label>默认语言 <input name="default_language" id="defaultLanguage" placeholder="python"></label>
+          <label>默认框架 <input name="default_framework" id="defaultFramework" placeholder="requests"></label>
+          <label class="wide-field">ZenTao Base URL <input name="zentao_base_url" id="zentaoBaseUrl" placeholder="http://your-zentao-server/api.php/v2"></label>
+          <label>ZenTao Account <input name="zentao_account" id="zentaoAccount"></label>
+          <div class="secret-row">
+            <label>ZenTao Password <input name="zentao_password" id="zentaoPassword" type="password" placeholder="留空则保留已有密码"></label>
+            <div class="checks"><label><input id="clearZentaoPassword" type="checkbox">清空</label></div>
+          </div>
+          <div class="secret-row">
+            <label>ZenTao Token <input name="zentao_token" id="zentaoToken" type="password" placeholder="留空则保留已有 token"></label>
+            <div class="checks"><label><input id="clearZentaoToken" type="checkbox">清空</label></div>
+          </div>
+          <label>ZenTao 产品 ID <input name="zentao_product_id" id="zentaoProductId" type="number" min="1"></label>
+          <label>ZenTao Timeout <input name="zentao_timeout" id="zentaoTimeout" type="number" min="1" max="600"></label>
+          <label class="wide-field">默认 Swagger UI <input name="swagger_ui_url" id="settingsSwaggerUiUrl" placeholder="https://petstore.swagger.io/"></label>
+          <label class="wide-field">默认 OpenAPI JSON <input name="spec_url" id="settingsSpecUrl" placeholder="https://petstore.swagger.io/v2/swagger.json"></label>
+          <label class="wide-field">输出目录 <input name="output_dir" id="outputDir" placeholder="artifacts"></label>
+          </div>
+          <div class="checks" style="margin-top: 8px;">
+            <label><input name="zentao_allow_sample_fallback" id="zentaoAllowSampleFallback" type="checkbox">允许 ZenTao 样例数据回退</label>
+          </div>
+          <div class="muted" id="settingsHint">本地配置保存到 artifacts/config/settings.local.json，敏感字段留空会保留原值。</div>
+          <div class="settings-actions">
+            <div class="actions">
+              <button type="submit">保存配置</button>
+              <button type="button" class="secondary" onclick="loadSettings()">重新读取</button>
+            </div>
+            <div class="actions">
+              <button type="button" class="secondary" onclick="verifySetting('api-tester-mcp')">校验 MCP 路径</button>
+              <button type="button" class="secondary" onclick="verifySetting('zentao')">校验 ZenTao</button>
+              <button type="button" class="secondary" onclick="verifySetting('qwen')">校验 Qwen</button>
+            </div>
+          </div>
+        </form>
+      </details>
+
+      <form class="panel" id="apiForm">
+        <h2>接口测试</h2>
+        <label>Swagger UI URL <input name="swagger_ui_url" id="apiSwaggerUiUrl" placeholder="https://petstore.swagger.io/"></label>
+        <label>OpenAPI JSON URL <input name="spec_url" id="apiSpecUrl" placeholder="可选，优先于 Swagger UI"></label>
+        <label>api_tester_mcp 路径 <input name="api_tester_mcp_source" id="apiTesterMcpSource" value="E:\个人文件\MCP\api_tester_mcp-1.5.3" placeholder="例如 E:\个人文件\MCP\api_tester_mcp-1.5.3"></label>
+        <div class="row">
+          <label>模式
+            <select name="mode" id="apiMode">
+              <option value="smoke">smoke</option>
+              <option value="full">full</option>
+            </select>
+          </label>
+          <label>并发数 <input name="max_concurrent" id="apiMaxConcurrent" type="number" min="1" max="100" value="10"></label>
         </div>
         <label>Base URL <input name="base_url" placeholder="可选"></label>
         <div class="checks">
@@ -357,7 +460,12 @@
             <option value="custom">开始日期 + 截止日期</option>
           </select>
         </label>
-        <label>迭代名称 <input name="iteration" id="iterationName" value="V3.4" required></label>
+        <label id="iterationSelectField">迭代名称
+          <select name="iteration" id="iterationName"></select>
+        </label>
+        <label id="iterationCustomField" style="display:none">自定义名称
+          <input name="iteration_custom" id="iterationCustomName" value="自定义统计">
+        </label>
         <div class="row">
           <label id="startDateField" style="display:none">开始日期 <input name="start_date" id="iterationStartDate" type="date"></label>
           <label>截止日期 <input name="end_date" type="date"></label>
@@ -451,6 +559,7 @@
     let pollTimer = null;
     let currentTask = null;
     let allTasks = [];
+    let iterations = [];
     let pendingModalAction = null;
     let pendingDeleteTask = null;
 
@@ -488,6 +597,44 @@
       }
     });
 
+    document.getElementById("settingsForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const data = new FormData(form);
+      const payload = {};
+      const textFields = [
+        "llm_base_url", "llm_api_key", "llm_model", "swagger_ui_url", "spec_url",
+        "output_dir", "api_tester_mcp_source", "default_api_mode", "default_language",
+        "default_framework", "zentao_base_url", "zentao_account", "zentao_password", "zentao_token",
+      ];
+      for (const field of textFields) {
+        const value = String(data.get(field) || "").trim();
+        if (value || !["llm_api_key", "zentao_password", "zentao_token"].includes(field)) {
+          payload[field] = value;
+        }
+      }
+      payload.llm_timeout = Number(data.get("llm_timeout") || 60);
+      payload.smoke_max_endpoints = Number(data.get("smoke_max_endpoints") || 10);
+      payload.zentao_product_id = Number(data.get("zentao_product_id") || 8);
+      payload.zentao_timeout = Number(data.get("zentao_timeout") || 30);
+      payload.zentao_allow_sample_fallback = document.getElementById("zentaoAllowSampleFallback").checked;
+      payload.clear_fields = [];
+      if (document.getElementById("clearLlmApiKey").checked) payload.clear_fields.push("llm_api_key");
+      if (document.getElementById("clearZentaoPassword").checked) payload.clear_fields.push("zentao_password");
+      if (document.getElementById("clearZentaoToken").checked) payload.clear_fields.push("zentao_token");
+      try {
+        const result = await api("/api/settings", {
+          method: "PUT",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(payload),
+        });
+        applySettings(result.settings);
+        showToast("配置已保存。", "success");
+      } catch (error) {
+        showToast(error.message, "error");
+      }
+    });
+
     async function submitImport(dryRun) {
       const form = document.getElementById("importForm");
       const data = new FormData(form);
@@ -510,9 +657,12 @@
     async function submitIteration(report) {
       const form = document.getElementById("iterationForm");
       const payload = formJson(form);
-      if (document.getElementById("iterationMode").value !== "custom") {
+      if (document.getElementById("iterationMode").value === "custom") {
+        payload.iteration = payload.iteration_custom || "自定义统计";
+      } else {
         delete payload.start_date;
       }
+      delete payload.iteration_custom;
       try {
         const result = await api(report ? "/api/iteration-stats/report" : "/api/iteration-stats/query", {
           method: "POST",
@@ -743,11 +893,53 @@
       }[char]));
     }
 
+    async function loadSettings() {
+      try {
+        const config = await api("/api/settings");
+        applySettings(config);
+      } catch (error) {
+        console.warn(error);
+        showToast("读取配置失败：" + error.message, "error");
+      }
+    }
+
+    function applySettings(config) {
+      setValue("llmBaseUrl", config.llm_base_url);
+      setValue("llmModel", config.llm_model);
+      setValue("llmTimeout", config.llm_timeout);
+      setSecretPlaceholder("llmApiKey", config.has_llm_api_key, config.llm_api_key_masked);
+      setValue("settingsApiTesterMcpSource", normalizePath(config.api_tester_mcp_source || "E:\\个人文件\\MCP\\api_tester_mcp-1.5.3"));
+      setValue("defaultApiMode", config.default_api_mode || "smoke");
+      setValue("smokeMaxEndpoints", config.smoke_max_endpoints);
+      setValue("defaultLanguage", config.default_language || "python");
+      setValue("defaultFramework", config.default_framework || "requests");
+      setValue("zentaoBaseUrl", config.zentao_base_url);
+      setValue("zentaoAccount", config.zentao_account);
+      setSecretPlaceholder("zentaoPassword", config.has_zentao_password, config.zentao_password_masked);
+      setSecretPlaceholder("zentaoToken", config.has_zentao_token, config.zentao_token_masked);
+      setValue("zentaoProductId", config.zentao_product_id);
+      setValue("zentaoTimeout", config.zentao_timeout);
+      setValue("settingsSwaggerUiUrl", config.swagger_ui_url);
+      setValue("settingsSpecUrl", config.spec_url);
+      setValue("outputDir", config.output_dir);
+      document.getElementById("zentaoAllowSampleFallback").checked = Boolean(config.zentao_allow_sample_fallback);
+      document.getElementById("clearLlmApiKey").checked = false;
+      document.getElementById("clearZentaoPassword").checked = false;
+      document.getElementById("clearZentaoToken").checked = false;
+      document.getElementById("settingsHint").textContent = `本地配置保存到 ${config.config_path}，敏感字段留空会保留原值。`;
+
+      setValue("apiSwaggerUiUrl", config.swagger_ui_url);
+      setValue("apiSpecUrl", config.spec_url);
+      setValue("apiMode", config.default_api_mode || "smoke");
+      setValue("apiMaxConcurrent", config.smoke_max_endpoints || 10);
+      setValue("apiTesterMcpSource", normalizePath(config.api_tester_mcp_source || "E:\\个人文件\\MCP\\api_tester_mcp-1.5.3"));
+    }
+
     async function loadConfig() {
       try {
         const config = await api("/api/config");
         const input = document.getElementById("apiTesterMcpSource");
-        const configuredPath = String(config.api_tester_mcp_source || "E:\\个人文件\\MCP\\api_tester_mcp-1.5.3").replaceAll("\\\\", "\\");
+        const configuredPath = normalizePath(config.api_tester_mcp_source || "E:\\个人文件\\MCP\\api_tester_mcp-1.5.3");
         if (configuredPath) {
           input.value = configuredPath;
         }
@@ -756,21 +948,80 @@
       }
     }
 
+    async function verifySetting(name) {
+      const labels = {
+        "api-tester-mcp": "MCP 路径",
+        zentao: "ZenTao",
+        qwen: "Qwen",
+      };
+      try {
+        await api(`/api/settings/verify/${name}`, {method: "POST"});
+        showToast(`${labels[name] || name} 校验通过。`, "success");
+      } catch (error) {
+        showToast(`${labels[name] || name} 校验失败：${error.message}`, "error");
+      }
+    }
+
+    function setValue(id, value) {
+      const element = document.getElementById(id);
+      if (element) element.value = value ?? "";
+    }
+
+    function setSecretPlaceholder(id, configured, masked) {
+      const element = document.getElementById(id);
+      if (!element) return;
+      element.value = "";
+      element.placeholder = configured ? `已配置：${masked}，留空则保留` : "未配置";
+    }
+
+    function normalizePath(value) {
+      return String(value || "").replaceAll("\\\\", "\\");
+    }
+
     function toggleIterationMode() {
       const mode = document.getElementById("iterationMode").value;
       const startField = document.getElementById("startDateField");
       const startInput = document.getElementById("iterationStartDate");
-      const iterationName = document.getElementById("iterationName");
+      const selectField = document.getElementById("iterationSelectField");
+      const customField = document.getElementById("iterationCustomField");
+      const customName = document.getElementById("iterationCustomName");
       const custom = mode === "custom";
       startField.style.display = custom ? "grid" : "none";
       startInput.required = custom;
-      iterationName.placeholder = custom ? "例如 自定义统计" : "例如 V3.4";
-      if (custom && iterationName.value === "V3.4") {
-        iterationName.value = "自定义统计";
+      selectField.style.display = custom ? "none" : "grid";
+      customField.style.display = custom ? "grid" : "none";
+      document.getElementById("iterationName").required = !custom;
+      customName.required = custom;
+    }
+
+    async function loadIterations() {
+      try {
+        const payload = await api("/api/iterations");
+        iterations = payload.iterations || [];
+        renderIterationOptions();
+      } catch (error) {
+        showToast("读取迭代列表失败：" + error.message, "error");
       }
-      if (!custom && iterationName.value === "自定义统计") {
-        iterationName.value = "V3.4";
+    }
+
+    function renderIterationOptions() {
+      const select = document.getElementById("iterationName");
+      select.innerHTML = "";
+      if (!iterations.length) {
+        const option = document.createElement("option");
+        option.value = "";
+        option.textContent = "未读取到迭代配置";
+        select.appendChild(option);
+        return;
       }
+      for (const iteration of iterations) {
+        const option = document.createElement("option");
+        option.value = iteration.name;
+        option.textContent = `${iteration.name}（${iteration.start_date} 起）`;
+        select.appendChild(option);
+      }
+      const preferred = iterations.find((item) => item.name === "V3.4") || iterations[iterations.length - 1];
+      select.value = preferred.name;
     }
 
     function detailOutputText(task) {
@@ -786,7 +1037,8 @@
       return "暂无输出。";
     }
 
-    loadConfig().catch(console.error);
+    loadSettings().catch(console.error);
+    loadIterations().catch(console.error);
     toggleIterationMode();
     refreshTasks().catch(console.error);
 

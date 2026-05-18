@@ -251,7 +251,8 @@ def summarize_iteration(
     submitted_today = len(today_bugs)
     closed_total = sum(1 for bug in bugs if _closed_in_range(bug, iteration.start_date, actual_end_date))
     closed_today = sum(1 for bug in raw_bugs if _closed_on(bug, actual_end_date))
-    active_total = sum(1 for bug in bugs if not _is_closed_at_end_date(bug, actual_end_date))
+    active_bugs = [bug for bug in bugs if not _is_closed_at_end_date(bug, actual_end_date)]
+    active_total = len(active_bugs)
 
     developer_stats = _developer_stats(bugs, iteration.start_date, actual_end_date, display_name_map)
     developer_residual_bugs = _developer_residual_bugs(bugs, actual_end_date, display_name_map)
@@ -260,6 +261,7 @@ def summarize_iteration(
     avg_close_hours = _average_close_hours(bugs)
 
     severity_distribution = Counter(str(bug.get("severity") or "unknown") for bug in bugs)
+    active_severity_distribution = Counter(str(bug.get("severity") or "unknown") for bug in active_bugs)
     opener_distribution = Counter(_display_name(str(bug.get("openedBy") or "unknown"), display_name_map) for bug in bugs)
 
     close_rate = round(closed_total / submitted_total * 100, 2) if submitted_total else 0.0
@@ -292,6 +294,7 @@ def summarize_iteration(
         "daily_trend": daily_trend,
         "daily_residual_bugs": daily_residual_bugs,
         "severity_distribution": dict(severity_distribution),
+        "active_severity_distribution": dict(active_severity_distribution),
         "opener_distribution": dict(opener_distribution),
         "display_name_map": display_name_map,
         "risks": _quality_risks(active_total, close_rate, severity_distribution, developer_stats),
@@ -323,6 +326,7 @@ def generate_report_html(stats: dict[str, Any], output_path: str | Path | None =
 
     summary = stats["summary"]
     severity_rows = _counter_rows(stats["severity_distribution"])
+    active_severity_rows = _counter_rows(stats.get("active_severity_distribution", {}))
     display_name_map = stats.get("display_name_map", {})
     developer_blocks = _render_expandable_bug_sections(
         title_key="developer",
@@ -401,8 +405,10 @@ def generate_report_html(stats: dict[str, Any], output_path: str | Path | None =
       <div class="dev-layout">
         <div class="dev-list">{developer_blocks}</div>
         <div class="side-panel">
-          <h3>缺陷严重度分布</h3>
+          <h3>全部缺陷严重度分布</h3>
           {severity_rows}
+          <h3 style="margin-top:18px">遗留缺陷严重度分布</h3>
+          {active_severity_rows}
         </div>
       </div>
     </div>

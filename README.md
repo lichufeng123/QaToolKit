@@ -105,11 +105,32 @@ Web 第一版包含：
 - 接口测试任务创建
 - Excel 测试用例导入 dry-run / 正式上传
 - 迭代统计查询 / HTML 报告生成
+- 系统配置中心：Qwen、ZenTao、api_tester_mcp、默认接口测试参数
 - 任务列表、任务详情、执行日志、输出 JSON、报告链接
 - 历史任务持久化、双击查看详情、删除任务记录
 - 任务搜索、状态筛选、类型筛选
 - 一键清理失败任务
 - 日志和输出折叠查看
+
+配置中心会把本机配置保存到：
+
+```text
+artifacts/config/settings.local.json
+```
+
+配置读取优先级：
+
+```text
+settings.local.json > .env > 代码默认值
+```
+
+敏感字段不会在页面回显明文。密码、token、API key 留空保存时会保留旧值；勾选清空时才会删除对应本地配置。
+
+配置中心支持校验：
+
+- `api_tester_mcp` 路径是否存在
+- ZenTao 登录与产品 Bug 列表是否可访问
+- Qwen OpenAI-Compatible `/chat/completions` 是否可用
 
 所有 Web 任务会统一记录到：
 
@@ -168,6 +189,7 @@ python -m unittest discover -s tests
 - 禅道迭代统计的日期过滤、关闭率、研发中文名映射
 - Excel 用例导入的 Sheet 模块映射、步骤/预期对齐、删除线跳过
 - Web 任务库的失败任务批量清理
+- 本地配置优先级、敏感字段清理回退
 
 ## 产物
 

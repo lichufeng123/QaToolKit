@@ -68,6 +68,8 @@ class IterationStatsTests(unittest.TestCase):
         self.assertEqual(stats["summary"]["closed_today"], 1)
         self.assertEqual(stats["summary"]["active_total"], 1)
         self.assertEqual(stats["summary"]["close_rate"], 50.0)
+        self.assertEqual(stats["severity_distribution"], {"2": 1, "3": 1})
+        self.assertEqual(stats["active_severity_distribution"], {"2": 1})
         self.assertIn("赖彦彰", stats["developer_stats"])
         self.assertIn("石浩栋", stats["developer_stats"])
         self.assertEqual(stats["developer_stats"]["赖彦彰"]["remaining_total"], 1)

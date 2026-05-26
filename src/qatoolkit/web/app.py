@@ -11,9 +11,17 @@ import requests
 from ..iteration_stats import load_iterations
 from ..shared.config import load_settings, local_settings_path, save_local_settings
 from ..shared.paths import project_root
-from .models import ApiTestingRunRequest, IterationStatsRequest, SettingsUpdateRequest, TaskCreatedResponse, TaskView
+from .models import (
+    ApiTestingRunRequest,
+    BugTitleOptimizationRequest,
+    IterationStatsRequest,
+    SettingsUpdateRequest,
+    TaskCreatedResponse,
+    TaskView,
+)
 from .services import (
     run_api_testing_task,
+    run_bug_title_optimization_task,
     run_iteration_stats_task,
     run_testcase_import_task,
     save_upload,
@@ -318,6 +326,17 @@ def iteration_report(request: IterationStatsRequest) -> TaskCreatedResponse:
         title=f"{request.iteration} 迭代报告",
         task_input=request.model_dump(),
         task_fn=lambda task_id, task_store: run_iteration_stats_task(request=request, generate_report=True),
+    )
+    return TaskCreatedResponse(task_id=task.id, task=_task_view(task.id))
+
+
+@app.post("/api/bug-title-optimization/run", response_model=TaskCreatedResponse)
+def bug_title_optimization(request: BugTitleOptimizationRequest) -> TaskCreatedResponse:
+    task = runner.submit(
+        task_type="bug_title_optimization",
+        title=f"{request.iteration} Bug 标题优化建议",
+        task_input=request.model_dump(),
+        task_fn=lambda task_id, task_store: run_bug_title_optimization_task(request=request),
     )
     return TaskCreatedResponse(task_id=task.id, task=_task_view(task.id))
 

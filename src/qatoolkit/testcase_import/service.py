@@ -23,12 +23,27 @@ MODULE_ID_MAP = {
     "AI员工": 122,
     "AI群组": 123,
     "工作流": 124,
+    "工作流/智能分镜脚本节点": 174,
+    "智能分镜脚本节点": 174,
+    "工作流/局部重绘": 175,
+    "局部重绘": 175,
+    "工作流/图像检测": 178,
+    "图像检测": 178,
     "公共支持服务": 125,
     "个人中心": 126,
+    "个人中心/消息提醒": 176,
+    "消息提醒": 176,
+    "个人中心/分享链接": 179,
+    "分享链接": 179,
     "赛点详情": 158,
     "资产库": 159,
     "需求池": 168,
     "登录": 172,
+    "收费系统": 180,
+    "收费系统/会员订阅系统": 181,
+    "会员订阅系统": 181,
+    "收费系统/会员权益配置": 182,
+    "会员权益配置": 182,
 }
 
 MODULE_NAME_ALIASES = {
@@ -36,12 +51,20 @@ MODULE_NAME_ALIASES = {
     "AI员工": {"AI员工", "员工", "智能体", "AI智能体"},
     "AI群组": {"AI群组", "群组"},
     "工作流": {"工作流"},
+    "工作流/智能分镜脚本节点": {"工作流/智能分镜脚本节点", "智能分镜脚本节点", "智能分镜脚本"},
+    "工作流/局部重绘": {"工作流/局部重绘", "/工作流/局部重绘", "局部重绘"},
+    "工作流/图像检测": {"工作流/图像检测", "/工作流/图像检测", "图像检测"},
     "公共支持服务": {"公共支持服务", "公共服务", "支持服务"},
     "个人中心": {"个人中心", "我的", "用户中心"},
+    "个人中心/消息提醒": {"个人中心/消息提醒", "消息提醒"},
+    "个人中心/分享链接": {"个人中心/分享链接", "/个人中心/分享链接", "分享链接"},
     "赛点详情": {"赛点详情"},
     "资产库": {"资产库", "素材库"},
     "需求池": {"需求池"},
     "登录": {"登录", "密码登录", "验证码登录", "手机号登录"},
+    "收费系统": {"收费系统"},
+    "收费系统/会员订阅系统": {"收费系统/会员订阅系统", "/收费系统/会员订阅系统", "会员订阅系统", "会员订阅"},
+    "收费系统/会员权益配置": {"收费系统/会员权益配置", "/收费系统/会员权益配置", "会员权益配置", "权益配置"},
 }
 
 HEADER_ALIASES = {
@@ -457,19 +480,29 @@ def _module_id(module_name: str) -> int | None:
     if compact in MODULE_ID_MAP:
         return MODULE_ID_MAP[compact]
 
+    candidates: list[tuple[int, int]] = []
     for canonical_name, aliases in MODULE_NAME_ALIASES.items():
         normalized_aliases = {_normalize_module_name(alias) for alias in aliases | {canonical_name}}
         if compact in normalized_aliases:
             return MODULE_ID_MAP.get(canonical_name)
-        if any(alias and alias in compact for alias in normalized_aliases):
-            return MODULE_ID_MAP.get(canonical_name)
-        if any(compact and compact in alias for alias in normalized_aliases):
-            return MODULE_ID_MAP.get(canonical_name)
+        for alias in normalized_aliases:
+            module_id = MODULE_ID_MAP.get(canonical_name)
+            if module_id is None:
+                continue
+            if alias and alias in compact:
+                candidates.append((len(alias), module_id))
+            elif compact and compact in alias:
+                candidates.append((len(alias), module_id))
+    if candidates:
+        return sorted(candidates, reverse=True)[0][1]
     return None
 
 
 def _normalize_module_name(value: str) -> str:
-    return value.replace(" ", "").replace("-", "").replace("_", "").strip()
+    compact = value.strip()
+    for token in (" ", "-", "_", "/", "\\", "／"):
+        compact = compact.replace(token, "")
+    return compact
 
 
 def _build_testcase_payload(

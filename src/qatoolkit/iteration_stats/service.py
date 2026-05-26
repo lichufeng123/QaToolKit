@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from dataclasses import dataclass
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 import html
 import json
 from pathlib import Path
@@ -244,17 +244,19 @@ def summarize_iteration(
     source = bug_source or ZentaoBugSource()
     raw_bugs = source.fetch_bugs(iteration, iteration.start_date, actual_end_date)
     bugs = _filter_bugs(raw_bugs, iteration.start_date, actual_end_date)
-    today_bugs = _filter_bugs(raw_bugs, actual_end_date, actual_end_date)
     display_name_map = _build_display_name_map(raw_bugs, source.user_name_map, source.user_name_roster)
 
     submitted_total = len(bugs)
-    submitted_today = len(today_bugs)
+    submitted_yesterday = sum(1 for bug in bugs if _opened_on(bug, actual_end_date - timedelta(days=1)))
     closed_total = sum(1 for bug in bugs if _closed_in_range(bug, iteration.start_date, actual_end_date))
     closed_today = sum(1 for bug in raw_bugs if _closed_on(bug, actual_end_date))
+    resolved_yesterday = sum(1 for bug in bugs if _resolved_on(bug, actual_end_date - timedelta(days=1)))
     active_bugs = [bug for bug in bugs if not _is_closed_at_end_date(bug, actual_end_date)]
     active_total = len(active_bugs)
+    intermittent_active_bugs = [bug for bug in active_bugs if _is_intermittent_bug(bug)]
 
     developer_stats = _developer_stats(bugs, iteration.start_date, actual_end_date, display_name_map)
+    developer_bug_groups = _developer_bug_groups(bugs, iteration.start_date, actual_end_date, display_name_map)
     developer_residual_bugs = _developer_residual_bugs(bugs, actual_end_date, display_name_map)
     daily_trend = _daily_trend(bugs, iteration.start_date, actual_end_date)
     daily_residual_bugs = _daily_residual_bugs(bugs, iteration.start_date, actual_end_date, display_name_map)
@@ -282,14 +284,18 @@ def summarize_iteration(
         "warnings": warnings,
         "summary": {
             "submitted_total": submitted_total,
-            "submitted_today": submitted_today,
+            "submitted_yesterday": submitted_yesterday,
             "closed_total": closed_total,
             "closed_today": closed_today,
+            "resolved_yesterday": resolved_yesterday,
             "active_total": active_total,
+            "actionable_active_total": active_total - len(intermittent_active_bugs),
+            "intermittent_active_total": len(intermittent_active_bugs),
             "close_rate": close_rate,
             "average_close_hours": avg_close_hours,
         },
         "developer_stats": developer_stats,
+        "developer_bug_groups": developer_bug_groups,
         "developer_residual_bugs": developer_residual_bugs,
         "daily_trend": daily_trend,
         "daily_residual_bugs": daily_residual_bugs,
@@ -297,7 +303,14 @@ def summarize_iteration(
         "active_severity_distribution": dict(active_severity_distribution),
         "opener_distribution": dict(opener_distribution),
         "display_name_map": display_name_map,
-        "risks": _quality_risks(active_total, close_rate, severity_distribution, developer_stats),
+        "intermittent_active_bugs": intermittent_active_bugs,
+        "risks": _quality_risks(
+            active_total,
+            close_rate,
+            severity_distribution,
+            developer_stats,
+            intermittent_active_total=len(intermittent_active_bugs),
+        ),
     }
 
 
@@ -321,6 +334,26 @@ def _report_output_path(stats: dict[str, Any], output_path: str | Path | None = 
     raise RuntimeError(f"无法生成不重名的报告文件名：{output}")
 
 
+def _summary_card_output_path(stats: dict[str, Any], output_path: str | Path | None = None) -> Path:
+    if output_path:
+        output = Path(output_path)
+    else:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output = project_root() / "artifacts" / "iteration_reports" / f"{stats['iteration']['name']}_leader_card_{stats['iteration']['end_date']}_{timestamp}.svg"
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    if not output.exists():
+        return output
+
+    stem = output.stem
+    suffix = output.suffix
+    for index in range(2, 10_000):
+        candidate = output.with_name(f"{stem}_{index}{suffix}")
+        if not candidate.exists():
+            return candidate
+    raise RuntimeError(f"无法生成不重名的汇报卡片文件名：{output}")
+
+
 def generate_report_html(stats: dict[str, Any], output_path: str | Path | None = None) -> str:
     output = _report_output_path(stats, output_path)
 
@@ -328,16 +361,17 @@ def generate_report_html(stats: dict[str, Any], output_path: str | Path | None =
     severity_rows = _counter_rows(stats["severity_distribution"])
     active_severity_rows = _counter_rows(stats.get("active_severity_distribution", {}))
     display_name_map = stats.get("display_name_map", {})
-    developer_blocks = _render_expandable_bug_sections(
-        title_key="developer",
+    developer_blocks = _render_developer_sections(
         rows=stats["developer_stats"],
-        bug_groups=stats.get("developer_residual_bugs", {}),
-        summary_fields=("resolved_total", "resolved_today", "remaining_total", "remaining_today"),
-        summary_labels=("累计解决", "今日解决", "累计遗留", "今日遗留"),
-        summary_suffix="遗留 Bug",
+        bug_groups=stats.get("developer_bug_groups", {}),
         name_map=display_name_map,
     )
     trend_blocks = _render_expandable_day_sections(stats["daily_trend"], stats.get("daily_residual_bugs", {}), display_name_map)
+    intermittent_rows = _bug_details_table(
+        stats.get("intermittent_active_bugs", []),
+        display_name_map,
+        "暂无偶发待复现 Bug。",
+    )
     risk_items = "".join(f"<li>{risk}</li>" for risk in stats["risks"]) or "<li>暂无明显风险。</li>"
 
     html = f"""<!doctype html>
@@ -352,7 +386,7 @@ def generate_report_html(stats: dict[str, Any], output_path: str | Path | None =
     h1 {{ margin: 0; font-size: 30px; }}
     h2 {{ margin: 0 0 14px; font-size: 18px; }}
     .muted {{ color: #64748b; }}
-    .grid {{ display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }}
+    .grid {{ display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }}
     .card {{ background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; box-shadow: 0 10px 24px rgba(15, 23, 42, .05); }}
     .metric {{ font-size: 28px; font-weight: 700; margin-top: 8px; }}
     .band {{ display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(320px, 0.95fr); gap: 16px; margin-top: 16px; align-items: start; }}
@@ -368,16 +402,31 @@ def generate_report_html(stats: dict[str, Any], output_path: str | Path | None =
     .bar {{ height: 10px; background: #e2e8f0; border-radius: 999px; overflow: hidden; }}
     .bar span {{ display: block; height: 100%; background: #2563eb; }}
     .risk li {{ margin: 8px 0; }}
+    .notice {{ border-left: 4px solid #f59e0b; background: #fffbeb; }}
     .expandable {{ border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; margin-top: 12px; overflow: hidden; }}
     .expandable summary {{ list-style: none; cursor: pointer; padding: 14px 16px; display: grid; grid-template-columns: 144px minmax(0, 1fr); gap: 12px; align-items: start; }}
     .expandable summary::-webkit-details-marker {{ display: none; }}
     .expand-title {{ font-weight: 700; white-space: nowrap; line-height: 1.35; }}
     .expand-meta {{ color: #64748b; font-size: 13px; line-height: 1.45; }}
     .expand-body {{ padding: 0 16px 14px; }}
-    .bug-table {{ margin-top: 12px; }}
+    .bug-table {{ margin-top: 12px; min-width: 920px; table-layout: auto; }}
     .bug-table th, .bug-table td {{ font-size: 13px; vertical-align: top; }}
+    .bug-table th:nth-child(2), .bug-table td:nth-child(2) {{ min-width: 260px; line-height: 1.45; }}
+    .bug-table th:nth-child(4), .bug-table td:nth-child(4),
+    .bug-table th:nth-child(5), .bug-table td:nth-child(5),
+    .bug-table th:nth-child(6), .bug-table td:nth-child(6) {{ min-width: 72px; white-space: nowrap; }}
     .bug-pill {{ display: inline-block; padding: 2px 8px; border-radius: 999px; background: #eff6ff; color: #1d4ed8; font-size: 12px; }}
+    .metric-links {{ display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }}
+    .metric-links details {{ border: 1px solid #e5e7eb; border-radius: 8px; background: #f8fafc; overflow: hidden; }}
+    .metric-links details[open] {{ grid-column: 1 / -1; background: #fff; }}
+    .metric-links summary {{ cursor: pointer; list-style: none; padding: 10px; display: block; }}
+    .metric-links summary::-webkit-details-marker {{ display: none; }}
+    .metric-links details[open] summary {{ border-bottom: 1px solid #e5e7eb; }}
+    .metric-label {{ color: #64748b; font-size: 12px; }}
+    .metric-value {{ display: block; color: #0f172a; font-size: 20px; font-weight: 700; margin-top: 4px; }}
+    .metric-detail {{ padding: 0 10px 10px; overflow-x: auto; }}
     @media (max-width: 900px) {{ .grid, .band, .dev-layout {{ grid-template-columns: 1fr; }} }}
+    @media (max-width: 900px) {{ .metric-links {{ grid-template-columns: 1fr; }} }}
   </style>
 </head>
 <body>
@@ -393,9 +442,11 @@ def generate_report_html(stats: dict[str, Any], output_path: str | Path | None =
 
   <section class="grid">
     <div class="card"><div class="muted">累计提交 Bug</div><div class="metric">{summary['submitted_total']}</div></div>
-    <div class="card"><div class="muted">今日提交 Bug</div><div class="metric">{summary['submitted_today']}</div></div>
+    <div class="card"><div class="muted">昨日提交 Bug</div><div class="metric">{summary.get('submitted_yesterday', 0)}</div></div>
     <div class="card"><div class="muted">累计关闭 Bug</div><div class="metric">{summary['closed_total']}</div></div>
+    <div class="card"><div class="muted">昨日解决 Bug</div><div class="metric">{summary.get('resolved_yesterday', 0)}</div></div>
     <div class="card"><div class="muted">遗留 Bug</div><div class="metric">{summary['active_total']}</div></div>
+    <div class="card"><div class="muted">偶发待复现</div><div class="metric">{summary.get('intermittent_active_total', 0)}</div></div>
     <div class="card"><div class="muted">关闭率</div><div class="metric">{summary['close_rate']}%</div></div>
   </section>
 
@@ -424,11 +475,85 @@ def generate_report_html(stats: dict[str, Any], output_path: str | Path | None =
       <ul>{risk_items}</ul>
     </div>
   </section>
+
+  <section class="band band--dev">
+    <div class="card notice">
+      <h2>偶发待复现 Bug</h2>
+      <div class="muted">标题以 [] 标记的 Bug 单独归类，通常为测试侧继续定位复现路径，不计入研发待处理分布。</div>
+      {intermittent_rows}
+    </div>
+  </section>
 </main>
 </body>
 </html>
 """
     output.write_text(html, encoding="utf-8")
+    return str(output)
+
+
+def generate_summary_card_svg(stats: dict[str, Any], output_path: str | Path | None = None) -> str:
+    output = _summary_card_output_path(stats, output_path)
+    summary = stats["summary"]
+    active = int(summary.get("active_total") or 0)
+    intermittent = int(summary.get("intermittent_active_total") or 0)
+    actionable = int(summary.get("actionable_active_total") or max(active - intermittent, 0))
+    risks = stats.get("risks") or ["暂无明显风险。"]
+    active_severity = stats.get("active_severity_distribution", {})
+    total_active_severity = sum(int(value) for value in active_severity.values()) or 1
+    serious_active = int(active_severity.get("1", 0)) + int(active_severity.get("2", 0))
+    serious_percent = round(serious_active / total_active_severity * 100, 1) if active else 0
+
+    title = f"{stats['iteration']['name']} 测试状态汇报"
+    period = f"{stats['iteration']['start_date']} 至 {stats['iteration']['end_date']}"
+    metrics = [
+        ("累计提交", summary["submitted_total"], "#2563eb"),
+        ("累计关闭", summary["closed_total"], "#16a34a"),
+        ("遗留 Bug", active, "#dc2626"),
+        ("待研发处理", actionable, "#f97316"),
+        ("偶发待复现", intermittent, "#ca8a04"),
+        ("关闭率", f"{summary['close_rate']}%", "#0f766e"),
+    ]
+    metric_cards = []
+    for index, (label, value, color) in enumerate(metrics):
+        x = 48 + (index % 3) * 352
+        y = 142 + (index // 3) * 126
+        metric_cards.append(
+            f"""
+  <rect x="{x}" y="{y}" width="320" height="94" rx="14" fill="#ffffff" stroke="#dbe4f0"/>
+  <text x="{x + 22}" y="{y + 34}" font-size="24" fill="#64748b">{_svg_text(label)}</text>
+  <text x="{x + 22}" y="{y + 72}" font-size="38" font-weight="700" fill="{color}">{_svg_text(str(value))}</text>"""
+        )
+
+    risk_lines = [_svg_text(str(item)) for item in risks[:3]]
+    while len(risk_lines) < 3:
+        risk_lines.append("暂无补充风险。")
+    severity_bar_width = 440
+    serious_width = int(severity_bar_width * min(serious_percent, 100) / 100)
+
+    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675">
+  <rect width="1200" height="675" fill="#f4f7fb"/>
+  <rect x="28" y="28" width="1144" height="619" rx="24" fill="#ffffff" stroke="#dbe4f0"/>
+  <text x="54" y="82" font-size="36" font-weight="700" fill="#0f172a">{_svg_text(title)}</text>
+  <text x="54" y="120" font-size="22" fill="#64748b">统计周期：{_svg_text(period)} ｜ 产品ID：{_svg_text(str(stats.get('source', {}).get('product_id', '-')))}</text>
+  {''.join(metric_cards)}
+
+  <rect x="48" y="410" width="512" height="176" rx="16" fill="#f8fafc" stroke="#dbe4f0"/>
+  <text x="76" y="454" font-size="26" font-weight="700" fill="#0f172a">遗留结构</text>
+  <text x="76" y="500" font-size="22" fill="#334155">严重等级 1/2：{serious_active} 个，占遗留严重度 {serious_percent}%</text>
+  <rect x="76" y="526" width="{severity_bar_width}" height="18" rx="9" fill="#e2e8f0"/>
+  <rect x="76" y="526" width="{serious_width}" height="18" rx="9" fill="#ef4444"/>
+  <text x="76" y="570" font-size="20" fill="#64748b">偶发待复现 Bug 已从研发待处理口径中单独拆出。</text>
+
+  <rect x="592" y="410" width="532" height="176" rx="16" fill="#fff7ed" stroke="#fed7aa"/>
+  <text x="620" y="454" font-size="26" font-weight="700" fill="#9a3412">汇报关注点</text>
+  <text x="644" y="500" font-size="21" fill="#431407">1. {risk_lines[0]}</text>
+  <text x="644" y="536" font-size="21" fill="#431407">2. {risk_lines[1]}</text>
+  <text x="644" y="572" font-size="21" fill="#431407">3. {risk_lines[2]}</text>
+
+  <text x="54" y="622" font-size="18" fill="#94a3b8">QAToolKit 自动生成，适合复制到日报、周报或发送给管理侧。</text>
+</svg>
+"""
+    output.write_text(svg, encoding="utf-8")
     return str(output)
 
 
@@ -470,8 +595,18 @@ def _filter_bugs(bugs: list[dict[str, Any]], start_date: date, end_date: date) -
     return result
 
 
+def _opened_on(bug: dict[str, Any], target_date: date) -> bool:
+    opened = _bug_opened_date(bug)
+    return bool(opened and opened.date() == target_date)
+
+
 def _status_text(bug: dict[str, Any]) -> str:
     return str(bug.get("status") or "").strip().lower()
+
+
+def _is_intermittent_bug(bug: dict[str, Any]) -> bool:
+    title = str(bug.get("title") or "").strip()
+    return title.startswith("[") and "]" in title
 
 
 def _is_closed_at_end_date(bug: dict[str, Any], target_date: date) -> bool:
@@ -500,6 +635,11 @@ def _closed_on(bug: dict[str, Any], target_date: date) -> bool:
     return bool(resolved and resolved.date() == target_date and _status_text(bug) in {"closed", "resolved", "done"})
 
 
+def _resolved_on(bug: dict[str, Any], target_date: date) -> bool:
+    resolved = _bug_resolved_date(bug)
+    return bool(resolved and resolved.date() == target_date)
+
+
 def _developer_stats(
     bugs: list[dict[str, Any]],
     start_date: date,
@@ -509,8 +649,8 @@ def _developer_stats(
     stats: dict[str, dict[str, int]] = defaultdict(lambda: {
         "resolved_total": 0,
         "resolved_today": 0,
+        "resolved_yesterday": 0,
         "remaining_total": 0,
-        "remaining_today": 0,
     })
     name_map = name_map or {}
 
@@ -518,17 +658,51 @@ def _developer_stats(
         opened = _bug_opened_date(bug)
         resolved = _bug_resolved_date(bug)
         if opened and start_date <= opened.date() <= end_date and not _is_closed_at_end_date(bug, end_date):
+            if _is_intermittent_bug(bug):
+                continue
             owner = _display_name(str(bug.get("assignedTo") or bug.get("openedBy") or "未指派"), name_map)
             stats[owner]["remaining_total"] += 1
-            if opened.date() == end_date:
-                stats[owner]["remaining_today"] += 1
         if resolved and start_date <= resolved.date() <= end_date:
             owner = _display_name(str(bug.get("resolvedBy") or bug.get("assignedTo") or "未知"), name_map)
             stats[owner]["resolved_total"] += 1
             if resolved.date() == end_date:
                 stats[owner]["resolved_today"] += 1
+            if resolved.date() == end_date - timedelta(days=1):
+                stats[owner]["resolved_yesterday"] += 1
 
     return dict(stats)
+
+
+def _developer_bug_groups(
+    bugs: list[dict[str, Any]],
+    start_date: date,
+    end_date: date,
+    name_map: dict[str, str],
+) -> dict[str, dict[str, list[dict[str, Any]]]]:
+    groups: dict[str, dict[str, list[dict[str, Any]]]] = defaultdict(lambda: {
+        "resolved_total": [],
+        "resolved_today": [],
+        "resolved_yesterday": [],
+        "remaining_total": [],
+    })
+
+    for bug in bugs:
+        opened = _bug_opened_date(bug)
+        resolved = _bug_resolved_date(bug)
+        if opened and start_date <= opened.date() <= end_date and not _is_closed_at_end_date(bug, end_date):
+            if _is_intermittent_bug(bug):
+                continue
+            owner = _display_name(str(bug.get("assignedTo") or bug.get("openedBy") or "未指派"), name_map)
+            groups[owner]["remaining_total"].append(bug)
+        if resolved and start_date <= resolved.date() <= end_date:
+            owner = _display_name(str(bug.get("resolvedBy") or bug.get("assignedTo") or "未知"), name_map)
+            groups[owner]["resolved_total"].append(bug)
+            if resolved.date() == end_date:
+                groups[owner]["resolved_today"].append(bug)
+            if resolved.date() == end_date - timedelta(days=1):
+                groups[owner]["resolved_yesterday"].append(bug)
+
+    return {name: dict(items) for name, items in groups.items()}
 
 
 def _daily_trend(bugs: list[dict[str, Any]], start_date: date, end_date: date) -> list[dict[str, Any]]:
@@ -573,6 +747,7 @@ def _quality_risks(
     close_rate: float,
     severity_distribution: Counter,
     developer_stats: dict[str, dict[str, int]],
+    intermittent_active_total: int = 0,
 ) -> list[str]:
     risks = []
     serious = int(severity_distribution.get("1", 0)) + int(severity_distribution.get("2", 0))
@@ -582,6 +757,8 @@ def _quality_risks(
         risks.append(f"缺陷关闭率为 {close_rate}%，低于 80%，版本收口风险偏高。")
     if serious > 0:
         risks.append(f"严重等级 1/2 的 Bug 共 {serious} 个，需要优先复盘。")
+    if intermittent_active_total > 0:
+        risks.append(f"当前有 {intermittent_active_total} 个偶发待复现 Bug，建议单独跟踪复现路径和证据收集。")
     for developer, item in developer_stats.items():
         if item["remaining_total"] >= 3:
             risks.append(f"{developer} 名下遗留 {item['remaining_total']} 个 Bug，可能存在处理瓶颈。")
@@ -692,9 +869,13 @@ def _bug_detail(bug: dict[str, Any], name_map: dict[str, str]) -> dict[str, str]
     }
 
 
-def _bug_details_table(bugs: list[dict[str, Any]], name_map: dict[str, str]) -> str:
+def _svg_text(value: str) -> str:
+    return html.escape(value, quote=False)
+
+
+def _bug_details_table(bugs: list[dict[str, Any]], name_map: dict[str, str], empty_text: str = "没有遗留 Bug。") -> str:
     if not bugs:
-        return "<div class='muted'>没有遗留 Bug。</div>"
+        return f"<div class='muted'>{html.escape(empty_text)}</div>"
 
     rows = []
     for bug in bugs:
@@ -754,6 +935,49 @@ def _render_expandable_bug_sections(
     return "".join(blocks)
 
 
+def _render_developer_sections(
+    *,
+    rows: dict[str, dict[str, int]],
+    bug_groups: dict[str, dict[str, list[dict[str, Any]]]],
+    name_map: dict[str, str],
+) -> str:
+    if not rows:
+        return "<div class='muted'>暂无数据</div>"
+
+    labels = {
+        "resolved_total": "累计解决",
+        "resolved_today": "今日解决",
+        "resolved_yesterday": "昨日解决",
+        "remaining_total": "累计遗留",
+    }
+    empty_texts = {
+        "resolved_total": "没有累计解决 Bug。",
+        "resolved_today": "没有今日解决 Bug。",
+        "resolved_yesterday": "没有昨日解决 Bug。",
+        "remaining_total": "没有累计遗留 Bug。",
+    }
+    blocks = []
+    for name, summary in rows.items():
+        groups = bug_groups.get(name, {})
+        metrics = []
+        for field, label in labels.items():
+            bug_items = groups.get(field, [])
+            metrics.append(
+                f"""<details>
+  <summary><span class="metric-label">{label}</span><span class="metric-value">{summary.get(field, 0)}</span></summary>
+  <div class="metric-detail">{_bug_details_table(bug_items, name_map, empty_texts[field])}</div>
+</details>"""
+            )
+        stats_text = " | ".join(f"{label} {summary.get(field, 0)}" for field, label in labels.items())
+        blocks.append(
+            f"""<details class="expandable developer-row">
+  <summary><span class="expand-title">{html.escape(name)}</span><span class="expand-meta">{stats_text}，点对应指标看明细</span></summary>
+  <div class="expand-body"><div class="metric-links">{''.join(metrics)}</div></div>
+</details>"""
+        )
+    return "".join(blocks)
+
+
 def _render_expandable_day_sections(days: list[dict[str, Any]], bug_groups: dict[str, list[dict[str, Any]]], name_map: dict[str, str]) -> str:
     blocks = []
     for item in days:
@@ -781,6 +1005,8 @@ def _developer_residual_bugs(
         if not opened or opened.date() > end_date:
             continue
         if _is_closed_at_end_date(bug, end_date):
+            continue
+        if _is_intermittent_bug(bug):
             continue
         owner = _display_name(str(bug.get("assignedTo") or bug.get("openedBy") or "未指派"), name_map)
         groups[owner].append(bug)

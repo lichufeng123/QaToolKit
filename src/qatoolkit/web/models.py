@@ -57,6 +57,26 @@ class IterationStatsRequest(BaseModel):
     output_path: str | None = None
 
 
+class BugTitleOptimizationRequest(BaseModel):
+    iteration: str
+    start_date: str | None = None
+    end_date: str | None = None
+    iterations_file: str | None = None
+    status: Literal["active", "closed", "all"] = "active"
+    limit: int = Field(default=50, ge=0, le=500)
+    batch_size: int = Field(default=10, ge=1, le=50)
+    output_dir: str | None = None
+    zentao_base_url: str | None = None
+    zentao_account: str | None = None
+    zentao_password: str | None = None
+    zentao_token: str | None = None
+    zentao_product_id: int | None = None
+    zentao_timeout: int | None = None
+    allow_sample_fallback: bool = False
+    zentao_user_map_file: str | None = None
+    sample_bugs_file: str | None = None
+
+
 class TaskCreatedResponse(BaseModel):
     task_id: str
     task: TaskView

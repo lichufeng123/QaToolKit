@@ -6,10 +6,11 @@ from pathlib import Path
 from typing import Any
 
 from ..api_testing.agent import ApiTesterAgent
-from ..iteration_stats import ZentaoBugSource, generate_report_html, summarize_iteration
+from ..bug_title_optimizer import optimize_bug_titles
+from ..iteration_stats import ZentaoBugSource, generate_report_html, generate_summary_card_svg, summarize_iteration
 from ..shared.config import Settings, load_settings
 from ..testcase_import import import_testcases_from_excel
-from .models import ApiTestingRunRequest, IterationStatsRequest
+from .models import ApiTestingRunRequest, BugTitleOptimizationRequest, IterationStatsRequest
 from .task_store import TaskStore
 
 
@@ -99,10 +100,46 @@ def run_iteration_stats_task(
         bug_source=_build_bug_source(request),
     )
     report_path = generate_report_html(stats, request.output_path) if generate_report else None
+    summary_card_path = generate_summary_card_svg(stats) if generate_report else None
     output: dict[str, Any] = {"stats": stats}
     if report_path:
         output["report_path"] = report_path
+    if summary_card_path:
+        output["summary_card_path"] = summary_card_path
     return output, report_path
+
+
+def run_bug_title_optimization_task(
+    *,
+    request: BugTitleOptimizationRequest,
+) -> tuple[dict[str, Any], str | None]:
+    settings = load_settings()
+    start_date = date.fromisoformat(request.start_date) if request.start_date else None
+    end_date = date.fromisoformat(request.end_date) if request.end_date else None
+    result = optimize_bug_titles(
+        iteration_name=request.iteration,
+        settings=settings,
+        bug_source=ZentaoBugSource(
+            base_url=request.zentao_base_url or settings.zentao_base_url,
+            account=request.zentao_account or settings.zentao_account,
+            password=request.zentao_password or settings.zentao_password,
+            token=request.zentao_token or settings.zentao_token,
+            product_id=request.zentao_product_id or settings.zentao_product_id,
+            timeout=request.zentao_timeout or settings.zentao_timeout,
+            allow_sample_fallback=request.allow_sample_fallback or settings.zentao_allow_sample_fallback,
+            user_name_map_file=request.zentao_user_map_file or os.getenv("ZENTAO_USER_MAP_FILE"),
+            sample_file=request.sample_bugs_file,
+        ),
+        start_date=start_date,
+        end_date=end_date,
+        iterations_file=request.iterations_file,
+        status_filter=request.status,
+        limit=request.limit,
+        batch_size=request.batch_size,
+        output_dir=request.output_dir,
+    )
+    output = result.to_dict()
+    return output, result.html_report_path
 
 
 def save_upload(*, task_id: str, store: TaskStore, filename: str, content: bytes) -> Path:

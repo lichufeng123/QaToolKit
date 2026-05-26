@@ -27,6 +27,7 @@ except Exception:
 from ..iteration_stats import (
     ZentaoBugSource,
     generate_report_html,
+    generate_summary_card_svg,
     load_iterations,
     summarize_iteration,
 )
@@ -90,6 +91,19 @@ def generate_iteration_report(iteration: str, end_date: str | None = None, outpu
     )
     report_path = generate_report_html(stats, Path(output_path) if output_path else None)
     return report_path
+
+
+@mcp.tool()
+def generate_iteration_leader_card(iteration: str, end_date: str | None = None, output_path: str | None = None) -> str:
+    """生成适合发给管理侧的 SVG 测试状态汇报卡片，返回图片文件路径。"""
+    parsed_end_date = date.fromisoformat(end_date) if end_date else None
+    stats = summarize_iteration(
+        iteration_name=iteration,
+        end_date=parsed_end_date,
+        iterations_file=os.getenv("ITERATIONS_FILE"),
+        bug_source=_bug_source(),
+    )
+    return generate_summary_card_svg(stats, Path(output_path) if output_path else None)
 
 
 def main() -> None:

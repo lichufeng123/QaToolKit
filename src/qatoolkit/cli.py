@@ -7,7 +7,14 @@ import sys
 from pathlib import Path
 
 from .api_testing.agent import ApiTesterAgent
-from .iteration_stats import ZentaoBugSource, generate_report_html, load_iterations, summarize_iteration
+from .bug_title_optimizer import optimize_bug_titles
+from .iteration_stats import (
+    ZentaoBugSource,
+    generate_report_html,
+    generate_summary_card_svg,
+    load_iterations,
+    summarize_iteration,
+)
 from .shared.config import load_settings
 from .testcase_import import import_testcases_from_excel
 
@@ -69,6 +76,31 @@ def build_parser() -> argparse.ArgumentParser:
     iteration_report_parser.add_argument("--allow-sample-fallback", action="store_true", help="Allow local sample bugs as fallback")
     iteration_report_parser.add_argument("--zentao-user-map-file", help="Path to account-to-Chinese-name map JSON")
     iteration_report_parser.add_argument("--output-path", help="Report output path")
+    iteration_report_parser.add_argument("--summary-card-path", help="Leader summary SVG output path")
+    iteration_report_parser.add_argument("--no-summary-card", action="store_true", help="Skip leader summary SVG generation")
+
+    bug_title_parser = subparsers.add_parser("optimize-bug-titles", help="Generate Qwen-based ZenTao bug title suggestions")
+    bug_title_parser.add_argument("--iteration", required=True, help="Iteration name, for example V3.4")
+    bug_title_parser.add_argument("--start-date", help="Statistics start date, yyyy-mm-dd")
+    bug_title_parser.add_argument("--end-date", help="Statistics end date, yyyy-mm-dd")
+    bug_title_parser.add_argument("--iterations-file", help="Path to iterations.json")
+    bug_title_parser.add_argument("--status", choices=["active", "closed", "all"], default="active", help="Bug status filter")
+    bug_title_parser.add_argument("--limit", type=int, default=50, help="Max bugs to analyze; <=0 means no limit")
+    bug_title_parser.add_argument("--batch-size", type=int, default=10, help="Bugs per Qwen request")
+    bug_title_parser.add_argument("--output-dir", help="Report output directory")
+    bug_title_parser.add_argument("--llm-base-url", help="Qwen/OpenAI-compatible base URL")
+    bug_title_parser.add_argument("--llm-api-key", help="Qwen API key")
+    bug_title_parser.add_argument("--llm-model", help="Qwen model name")
+    bug_title_parser.add_argument("--llm-timeout", type=int, help="Qwen request timeout")
+    bug_title_parser.add_argument("--zentao-base-url", help="ZenTao API base URL")
+    bug_title_parser.add_argument("--zentao-account", help="ZenTao login account")
+    bug_title_parser.add_argument("--zentao-password", help="ZenTao login password")
+    bug_title_parser.add_argument("--zentao-token", help="ZenTao API token")
+    bug_title_parser.add_argument("--zentao-product-id", type=int, help="ZenTao product ID")
+    bug_title_parser.add_argument("--zentao-timeout", type=int, help="ZenTao API timeout")
+    bug_title_parser.add_argument("--allow-sample-fallback", action="store_true", help="Allow local sample bugs as fallback")
+    bug_title_parser.add_argument("--zentao-user-map-file", help="Path to account-to-Chinese-name map JSON")
+    bug_title_parser.add_argument("--sample-bugs-file", help="Path to sample ZenTao bugs JSON")
 
     testcase_import_parser = subparsers.add_parser("import-testcases", help="Import Excel testcases into ZenTao")
     testcase_import_parser.add_argument("--excel-file", required=True, help="Path to the Excel testcase workbook")
@@ -163,7 +195,54 @@ def main() -> None:
             return
 
         report_path = generate_report_html(stats, args.output_path)
-        print(json.dumps({"report_path": report_path, "stats": stats}, ensure_ascii=False, indent=2))
+        summary_card_path = None if args.no_summary_card else generate_summary_card_svg(stats, args.summary_card_path)
+        print(
+            json.dumps(
+                {"report_path": report_path, "summary_card_path": summary_card_path, "stats": stats},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+
+    if args.command == "optimize-bug-titles":
+        from datetime import date
+
+        start_date = date.fromisoformat(args.start_date) if args.start_date else None
+        end_date = date.fromisoformat(args.end_date) if args.end_date else None
+        bug_source = ZentaoBugSource(
+            base_url=args.zentao_base_url or os.getenv("ZENTAO_BASE_URL"),
+            account=args.zentao_account or os.getenv("ZENTAO_ACCOUNT") or os.getenv("ZENTAO_USER") or os.getenv("ZENTAO_USERNAME"),
+            password=args.zentao_password or os.getenv("ZENTAO_PASSWORD") or os.getenv("ZENTAO_PASS"),
+            token=args.zentao_token or os.getenv("ZENTAO_TOKEN"),
+            product_id=args.zentao_product_id or int(os.getenv("ZENTAO_PRODUCT_ID", "8")),
+            timeout=args.zentao_timeout or int(os.getenv("ZENTAO_TIMEOUT", "30")),
+            allow_sample_fallback=args.allow_sample_fallback
+            or os.getenv("ZENTAO_ALLOW_SAMPLE_FALLBACK", "0").strip().lower() in {"1", "true", "yes"},
+            user_name_map_file=args.zentao_user_map_file or os.getenv("ZENTAO_USER_MAP_FILE"),
+            sample_file=args.sample_bugs_file or os.getenv("ZENTAO_SAMPLE_BUGS_FILE"),
+        )
+        result = optimize_bug_titles(
+            iteration_name=args.iteration,
+            settings=settings.__class__(
+                **{
+                    **settings.__dict__,
+                    "llm_base_url": args.llm_base_url or settings.llm_base_url,
+                    "llm_api_key": args.llm_api_key or settings.llm_api_key,
+                    "llm_model": args.llm_model or settings.llm_model,
+                    "llm_timeout": args.llm_timeout or settings.llm_timeout,
+                }
+            ),
+            bug_source=bug_source,
+            start_date=start_date,
+            end_date=end_date,
+            iterations_file=args.iterations_file or os.getenv("ITERATIONS_FILE"),
+            status_filter=args.status,
+            limit=args.limit,
+            batch_size=args.batch_size,
+            output_dir=args.output_dir,
+        )
+        print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
         return
 
     if args.command == "import-testcases":
